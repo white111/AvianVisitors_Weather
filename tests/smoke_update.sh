@@ -20,7 +20,7 @@ command -v sha256sum >/dev/null
 
 test_root=/tmp/avian-update-smoke
 case_log=$test_root/current.log
-official=https://github.com/Twarner491/AvianVisitors.git
+official=https://github.com/white111/AvianVisitors_Weather.git
 rm -rf "$test_root"
 mkdir -p "$test_root" /etc/birdnet /usr/local/sbin
 id caddy >/dev/null 2>&1 \

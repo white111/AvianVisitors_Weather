@@ -6329,7 +6329,7 @@
     if (installationRecovery) {
       lockHint.textContent = 'Admin installation is incomplete or unsafe. Over SSH, run the verified setup in ';
       var link = document.createElement('a');
-      link.href = 'https://github.com/Twarner491/AvianVisitors#updating-an-existing-station';
+      link.href = 'https://github.com/white111/AvianVisitors_Weather#updating-an-existing-station';
       link.textContent = 'the installation recovery instructions';
       lockHint.appendChild(link);
       return;
@@ -12470,7 +12470,7 @@
         // left for the owner to fill in.
         var cutoutsNote = '';
         if (gen.chroma > 0) {
-          var cmd = 'curl -sLO https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitors/avian/scripts/upgrade_cutouts.py'
+          var cmd = 'curl -sLO https://raw.githubusercontent.com/white111/AvianVisitors_Weather/avian-visitors/avian/scripts/upgrade_cutouts.py'
             + ' && python3 upgrade_cutouts.py --pi pi-user@' + location.hostname;
           cutoutsNote = ''
             + '<div class="cutouts-note" id="cutoutsNote">'

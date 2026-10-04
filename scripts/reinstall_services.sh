@@ -8,7 +8,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 umask 077
 
-readonly OFFICIAL_ORIGIN='https://github.com/Twarner491/AvianVisitors'
+readonly OFFICIAL_ORIGIN='https://github.com/white111/AvianVisitors_Weather'
 readonly RELEASE_BRANCH='avian-visitors'
 readonly CONFIG_FILE='/etc/birdnet/birdnet.conf'
 readonly FIXED_HELPER='/usr/local/sbin/avian-service-refresh'

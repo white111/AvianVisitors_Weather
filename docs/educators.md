@@ -15,7 +15,7 @@ Educators mode is optional and stays off until you enable it.
 For a new station, add `--educators` to the installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Twarner491/AvianVisitors/avian-visitors/newinstaller.sh | bash -s -- --educators
+curl -fsSL https://raw.githubusercontent.com/white111/AvianVisitors_Weather/avian-visitors/newinstaller.sh | bash -s -- --educators
 ```
 
 For an existing station, first use **Tools > Pull latest** or follow the [update instructions](../README.md#updating-an-existing-station). Then run:
