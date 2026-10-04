@@ -1,0 +1,50 @@
+/* iPad touch layout, including the 1st-gen iPad Air (iOS 12, Safari 12).
+ *
+ * Loaded after styles.css (or styles.legacy.css on iOS 12). Kept in its own
+ * file so syncing upstream changes to styles.css never conflicts with it.
+ * Written in CSS that Safari 12 understands: no inset, clamp(), dvh,
+ * color-mix() or flex gap.
+ *
+ * html.legacy-safari is set in index.html when the browser lacks CSS `inset`.
+ */
+
+body {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Touch-sized controls on tablets ----
+   iPad portrait is wider than the phone breakpoint but still needs
+   finger-sized targets. pointer: coarse keeps a narrow desktop window
+   unchanged. */
+@media (pointer: coarse) and (min-width: 701px) and (max-width: 1366px) {
+  .top {
+    top: 16px;
+    top: max(16px, env(safe-area-inset-top));
+    padding-left: 20px;
+    padding-left: max(20px, env(safe-area-inset-left));
+    padding-right: 20px;
+    padding-right: max(20px, env(safe-area-inset-right));
+  }
+  .top .window-pick button { min-height: 40px; padding-left: 16px; padding-right: 16px; }
+  .menu-btn { min-height: 44px; padding-left: 18px; padding-right: 18px; }
+  .slider {
+    bottom: 18px;
+    bottom: max(18px, env(safe-area-inset-bottom));
+  }
+  .slider button { min-height: 42px; padding-left: 22px; padding-right: 22px; }
+}
+
+/* ---- Collage canvas height on Safari 12 ----
+   Safari 12 resolves the collage's flex height inside the fixed stage to
+   zero, so the packer waits forever and the collage stays blank. Give the
+   canvas an explicit height from the viewport instead: the static header
+   (~150px) plus the view's top/bottom padding (~96px) sit around it. */
+html.legacy-safari .view#v0 { height: 100%; }
+html.legacy-safari #v0 .gcollage {
+  -webkit-box-flex: 0;
+  -ms-flex: 0 0 auto;
+  flex: 0 0 auto;
+  height: calc(100vh - 250px);
+  min-height: 320px;
+}

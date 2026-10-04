@@ -53,6 +53,7 @@ EOF
 
 for frontend_file in \
   index.html styles.css apt.js masks.json dims.json nest.webp nest-eggs.webp \
+  nest.png nest-eggs.png styles.legacy.css ipad.css compat.js \
   stamps.css stamps.js stamp-batch-root.css stamp-batch-root.js \
   stamp-batch-a.css stamp-batch-a.js stamp-batch-b.css stamp-batch-b.js \
   stamp-batch-c.css stamp-batch-c.js grain.png stats-press.png; do
@@ -544,6 +545,7 @@ fi
 
 for target in \
   avian index.html styles.css apt.js masks.json dims.json nest.webp nest-eggs.webp \
+  nest.png nest-eggs.png styles.legacy.css ipad.css compat.js \
   stamps.css stamps.js stamp-batch-root.css stamp-batch-root.js \
   stamp-batch-a.css stamp-batch-a.js stamp-batch-b.css stamp-batch-b.js \
   stamp-batch-c.css stamp-batch-c.js grain.png stats-press.png fonts assets \

@@ -114,6 +114,23 @@ If the installed refresher itself is missing or unsafe, use the verified setup c
 
 ---
 
+## iPad display (including 1st-gen iPad Air)
+
+Open `http://pibird.local/` in Safari on the iPad and use **Share → Add to Home Screen** for a full-screen wall display. On touch screens, tap a bird once to see its name and tap it again to open its postcard. A postcard closes itself after 30 seconds without a touch, and a quiet **1H** window switches to **12H** until a bird is heard again.
+
+The 1st-gen iPad Air tops out at iOS 12 (Safari 12), which cannot read much of the modern CSS and a few of the browser APIs the collage uses. That browser automatically gets:
+
+- `styles.legacy.css`, generated from `styles.css`. Rebuild it whenever `styles.css` changes, for example after syncing upstream:
+  ```
+  cd avian/scripts/legacy_css && npm ci && npm run build
+  ```
+- `compat.js`, small stand-ins for `Element.animate`, `replaceChildren` and pointer events.
+- PNG copies of the nest artwork (Safari 12 has no WebP), and the classic Atlas cards instead of stamps.
+
+Tablet sizing lives in `avian/frontend/ipad.css`, kept separate so upstream changes to `styles.css` merge cleanly.
+
+---
+
 ## 3. (Optional) Restyle the illustrations
 
 The repo ships with 666 bundled illustrations (333 species, perched + flight). To restyle them or generate a set for your own region:

@@ -41,6 +41,7 @@ const render = {
   assignLabels() {},
   maskPack(tiles) { return tiles.map(tile => ({ ...tile, x: 30, y: 30 })); },
   collageImageSrc() { return '/crow.png'; },
+  NEST_SRC: './nest.webp',
   educatorScopeId() { return ''; }, windowLabel() { return 'today'; }, fmtN(n) { return String(n); },
   document: { createElement() { return { style: {}, setAttribute() {} }; } },
 };
@@ -49,7 +50,7 @@ vm.runInContext(between('  function escHtml(', '\n  }') + '\n  }', render);
 vm.runInContext(between('  function finishFrameRender(', '\n  // Staggered centre-out entrance:'), render);
 render.renderCollage(render.DATA.recent.species, false);
 assert.equal(children[0].innerHTML,
-  '<img loading="lazy" decoding="async" src="/crow.png" alt="Crow&quot; onerror=&quot;bad()">',
+  '<img loading="eager" decoding="async" src="/crow.png" alt="Crow&quot; onerror=&quot;bad()">',
   'a name cannot create a second HTML attribute');
 assert.equal(attrs['data-frame-count'], '1');
 assert.equal(attrs['data-frame-token'], '3');
@@ -66,7 +67,7 @@ for (const name of ['Anna\'s Hummingbird', 'Mésange & mésange', 'Crow "visitor
   render.DATA.recent = { species: [bird], frame_capture_id: 5 };
   render.renderCollage(render.DATA.recent.species, false);
   assert.equal(children.at(-2).innerHTML,
-    '<img loading="lazy" decoding="async" src="/crow.png" alt="' + render.escHtml(name) + '">');
+    '<img loading="eager" decoding="async" src="/crow.png" alt="' + render.escHtml(name) + '">');
 }
 const unknown = { sci: 'Unknown example', com: 'Unknown', n: 1 };
 render.loadMask = slug => slug === 'corvus-brachyrhynchos' ? {} : null;

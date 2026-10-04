@@ -85,6 +85,17 @@
   var VIEW_TITLES = ['Heard Recently', 'Heard Recently', 'Avian Atlas'];
   var EMPTY_WINDOW_COPY = 'no detections heard in this window';
   var staticHead = document.querySelector('.static-head');
+  // iPad (iOS 12): Safari 12 cannot decode WebP, so the empty-nest artwork
+  // falls back to PNG copies there. Safari never encodes WebP from a canvas,
+  // so this probe also picks PNG on newer Safari, which is harmless.
+  var WEBP_OK = (function () {
+    try {
+      var c = document.createElement('canvas');
+      return c.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+    } catch (e) { return false; }
+  })();
+  var NEST_SRC = WEBP_OK ? './nest.webp' : './nest.png';
+  var NEST_EGGS_SRC = WEBP_OK ? './nest-eggs.webp' : './nest-eggs.png';
   var staticTitle = document.getElementById('staticTitle');
   function applySiteName(value) {
     var name = typeof value === 'string' ? value.trim() : '';
@@ -863,7 +874,11 @@
   // save path or changes filtering, sorting, recordings, or deep links.
   var ATLAS_STYLE_KEY = 'bird:atlasStyle:v1';
   var sessionAtlasStyle = null;
+  // iPad (iOS 12): the stamp Atlas is built on :has(), container queries
+  // and individual transforms that Safari 12 cannot render, so that browser
+  // always gets the classic illustrated cards.
   function atlasStyle() {
+    if (typeof document !== 'undefined' && document.documentElement.classList.contains('legacy-safari')) return 'classic';
     if (sessionAtlasStyle !== null) return sessionAtlasStyle;
     return readLS(ATLAS_STYLE_KEY, 'stamps') === 'classic' ? 'classic' : 'stamps';
   }
@@ -1177,7 +1192,9 @@
       ellipseAspectBias: 2.1,
     };
   }
-  var GRID_STRIDE = 4; // viewport px per occupancy cell; smaller = slower
+  // iPad: a 4px occupancy grid is too slow for older iPad Safari and can hold
+  // the main thread before the collage paints. Touch devices use 8px.
+  var GRID_STRIDE = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 8 : 4; // viewport px per occupancy cell; smaller = slower
   var COLLAGE_PAD = 3; // breathing room (grid cells) around each bird;
   // eased on narrow screens where birds are smaller.
   // The lettering is thin ink and already carries LABEL_GAP of its own, so it
@@ -2758,7 +2775,7 @@
       // the status line beneath it. The frame (shoot.py) overrides the .empty
       // text for the e-ink panel; the nest illustration is shared by both.
       collage.innerHTML = '<div class="empty-nest">' +
-        '<img class="nest-img" src="nest.webp" alt="an empty nest" decoding="async">' +
+        '<img class="nest-img" src="' + NEST_SRC + '" alt="an empty nest" decoding="async">' +
         '<p class="empty window-empty">' + EMPTY_WINDOW_COPY + '</p></div>';
       // Bloom the nest in on the same cues as the collage (first load, window
       // change, view switch); a silent poll/resize renders without animate. The
@@ -2933,7 +2950,9 @@
       btn.style.top = r.y + 'px';
       btn.style.width = r.fullW + 'px';
       btn.style.height = r.fullH + 'px';
-      btn.innerHTML = '<img loading="lazy" decoding="async" src="' + img + '" alt="' + escHtml(s.com) + '">';
+      // iPad: Safari can treat these absolutely-positioned tiles inside the
+      // overflow-hidden stage as offscreen and never load lazy images.
+      btn.innerHTML = '<img loading="eager" decoding="async" src="' + img + '" alt="' + escHtml(s.com) + '">';
       if (r.labelRows) {
         addLabelInk();
         // One baseline per line of the name, each riding the line the planner
@@ -3132,8 +3151,7 @@
     }
     return null;
   }
-  collage.addEventListener('mousemove', function (ev) {
-    var hit = maskHitTest(ev.clientX, ev.clientY);
+  function setCollageHover(hit) {
     if (hit === collageHovered) return;
     if (collageHovered && collageHovered.el) collageHovered.el.classList.remove('is-hover');
     collageHovered = hit;
@@ -3159,6 +3177,9 @@
         tip.setAttribute('aria-hidden', 'true');
       }
     }
+  }
+  collage.addEventListener('mousemove', function (ev) {
+    setCollageHover(maskHitTest(ev.clientX, ev.clientY));
   });
   collage.addEventListener('mouseleave', function () {
     if (collageHovered && collageHovered.el) collageHovered.el.classList.remove('is-hover');
@@ -3166,11 +3187,45 @@
     var tip = document.getElementById('collageTip');
     if (tip) tip.setAttribute('aria-hidden', 'true');
   });
-  collage.addEventListener('click', function (ev) {
-    var hit = maskHitTest(ev.clientX, ev.clientY);
+  // iPad: tapping a bird first highlights it and shows its name pill, like
+  // a mouse hover; a second tap on the same bird within 360ms opens it. The
+  // highlight clears after 60 seconds or when the empty canvas is tapped.
+  var collageTouchTimer = null;
+  var collageLastTouch = null;
+  var collageTouchSuppressUntil = 0;
+  function clearCollageTouch() {
+    clearTimeout(collageTouchTimer);
+    collageTouchTimer = null;
+    collageLastTouch = null;
+    setCollageHover(null);
+  }
+  function openCollageBird(hit) {
     if (!hit) return;
     location.hash = '#sci=' + encodeURIComponent(hit.data.sci);
     go(2);
+  }
+  collage.addEventListener('click', function (ev) {
+    if (Date.now() < collageTouchSuppressUntil) return;
+    openCollageBird(maskHitTest(ev.clientX, ev.clientY));
+  });
+  collage.addEventListener('touchend', function (ev) {
+    if (!ev.changedTouches || ev.changedTouches.length !== 1) return;
+    var touch = ev.changedTouches[0];
+    var hit = maskHitTest(touch.clientX, touch.clientY);
+    if (!hit) { clearCollageTouch(); return; }
+    // Stop the synthetic click so one tap does not open the bird.
+    ev.preventDefault();
+    var now = Date.now();
+    collageTouchSuppressUntil = now + 500;
+    if (collageLastTouch && collageLastTouch.hit === hit && now - collageLastTouch.time < 360) {
+      clearCollageTouch();
+      openCollageBird(hit);
+      return;
+    }
+    collageLastTouch = { hit: hit, time: now };
+    setCollageHover(hit);
+    clearTimeout(collageTouchTimer);
+    collageTouchTimer = setTimeout(clearCollageTouch, 60000);
   });
 
   // Debug hook - call __layout({ slugs, weights, n }) from devtools to
@@ -5422,7 +5477,7 @@
       var fresh = justGenerated[s.sci] ? '&t=' + justGenerated[s.sci] : '';
       if (classic) {
         var common = s.com || s.sci;
-        var imageSrc = needsArt ? './nest-eggs.webp' : sketchSrc + fresh;
+        var imageSrc = needsArt ? NEST_EGGS_SRC : sketchSrc + fresh;
         var birdWiki = wikiUrl(s.sci);
         var birdEbird = ebirdUrl(s.sci);
         return ''
@@ -5466,7 +5521,7 @@
       // in the postcard's pose-control slot, where its cost and resulting state
       // change have enough context; no badge competes with the family artwork.
       var inner = window.STAMPS
-        ? window.STAMPS.markup(bird, needsArt ? './nest-eggs.webp' : sketchSrc + fresh)
+        ? window.STAMPS.markup(bird, needsArt ? NEST_EGGS_SRC : sketchSrc + fresh)
         : '';
       return ''
         + '<article class="bird-card stamp-card' + (needsArt ? ' needs-art' : '') + '"'
@@ -5736,6 +5791,51 @@
       refreshStatsContext(true);
     });
   });
+
+  // ---- iPad: keep a quiet 1H window from showing an empty nest ----
+  // When 1H has had no birds for 30 seconds, switch to 12H. Keep checking
+  // the last hour and return to 1H as soon as a bird is heard. Choosing any
+  // window by hand ends this. The saved window stays 1H, so a reload starts
+  // from the window that was chosen.
+  var oneHourAuto = false;
+  var oneHourEmptySince = 0;
+  var autoWindowClick = false;
+  winBtns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      if (autoWindowClick) return;
+      oneHourAuto = false;
+      oneHourEmptySince = 0;
+    });
+  });
+  function autoSelectWindow(hours) {
+    var btn = winBtns.filter(function (b) { return +b.dataset.h === hours; })[0];
+    if (!btn) return;
+    autoWindowClick = true;
+    try { btn.click(); } finally { autoWindowClick = false; }
+    writeLS('bird:window', '1');
+  }
+  function checkOneHourWindow() {
+    if (document.hidden || educatorScopeId()) return;
+    if (!oneHourAuto) {
+      var species = currentHours === 1 && DATA.recent && DATA.recent.species;
+      if (!species || species.length) { oneHourEmptySince = 0; return; }
+      if (!oneHourEmptySince) { oneHourEmptySince = Date.now(); return; }
+      if (Date.now() - oneHourEmptySince < 30000) return;
+      oneHourEmptySince = 0;
+      oneHourAuto = true;
+      autoSelectWindow(12);
+      return;
+    }
+    if (currentHours !== 12) { oneHourAuto = false; return; }
+    scopedFetchJson('recent', { hours: 1 }, educatorScopeRequest()).then(function (j) {
+      if (!oneHourAuto || currentHours !== 12) return;
+      if (j && j.species && j.species.length) {
+        oneHourAuto = false;
+        autoSelectWindow(1);
+      }
+    }).catch(function () { });
+  }
+  setInterval(checkOneHourWindow, 10000);
 
   // ---- Realtime polling ----
   // Live station data keeps its full 30-second refresh. Saved capabilities use
@@ -8846,7 +8946,7 @@
           if (request !== POSTCARD_IMAGE_REQUEST || !img) return;
           if (!ok) {
             if (artwork) artwork.setAttribute('data-art-state', 'fallback');
-            img.src = './nest-eggs.webp';
+            img.src = NEST_EGGS_SRC;
             img.dataset.sci = sci;
             img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
             img.classList.remove('is-loading');
@@ -9132,7 +9232,7 @@
 
     var imageReady;
     if (needsArt) {
-      img.src = './nest-eggs.webp';
+      img.src = NEST_EGGS_SRC;
       img.dataset.sci = sci;
       img.alt = 'Nest with eggs, bird image not generated yet for ' + sci;
       img.classList.remove('is-loading');
@@ -9166,7 +9266,7 @@
         if (!pick) {
           poseToggle.setAttribute('data-unavailable', 'true');
           if (artwork) artwork.setAttribute('data-art-state', 'fallback');
-          img.src = './nest-eggs.webp';
+          img.src = NEST_EGGS_SRC;
           img.dataset.sci = sci;
           img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
           img.classList.remove('is-loading');
@@ -9196,7 +9296,7 @@
           if (!ok) {
             poseToggle.setAttribute('data-unavailable', 'true');
             if (artwork) artwork.setAttribute('data-art-state', 'fallback');
-            img.src = './nest-eggs.webp';
+            img.src = NEST_EGGS_SRC;
             img.dataset.sci = sci;
             img.alt = 'Nest with eggs, bird illustration temporarily unavailable for ' + sci;
             img.classList.remove('is-loading');
@@ -13155,7 +13255,8 @@
       if (location.hash) { location.hash = ''; } else { closeAbout(); }
     }
   });
-  document.getElementById('aboutLink').addEventListener('click', function () {
+  var aboutLink = document.getElementById('aboutLink');
+  if (aboutLink) aboutLink.addEventListener('click', function () {
     location.hash = '#about';
   });
 
@@ -14444,6 +14545,27 @@
       activePostcardFlight = null;
     };
     anim.onfinish = finishFlight;
+  }
+
+  // iPad: close an open bird postcard after 30 seconds without a touch, so
+  // the wall display drifts back to the collage on its own.
+  var POSTCARD_IDLE_MS = 30000;
+  var postcardIdleTimer = null;
+  function armPostcardIdleClose() {
+    clearTimeout(postcardIdleTimer);
+    postcardIdleTimer = null;
+    if (!postcardModal || postcardModal.getAttribute('aria-hidden') === 'true') return;
+    postcardIdleTimer = setTimeout(function () {
+      postcardIdleTimer = null;
+      if (postcardModal.getAttribute('aria-hidden') !== 'true') closePostcard();
+    }, POSTCARD_IDLE_MS);
+  }
+  if (postcardModal && window.MutationObserver) {
+    new MutationObserver(armPostcardIdleClose)
+      .observe(postcardModal, { attributes: true, attributeFilter: ['aria-hidden'] });
+    ['touchstart', 'mousedown', 'keydown', 'wheel'].forEach(function (type) {
+      postcardModal.addEventListener(type, armPostcardIdleClose, { passive: true });
+    });
   }
 
   if (postcardModal) {
