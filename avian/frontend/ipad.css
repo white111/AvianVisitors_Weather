@@ -27,7 +27,15 @@ body {
     padding-right: max(20px, env(safe-area-inset-right));
   }
   .top .window-pick button { min-height: 40px; padding-left: 16px; padding-right: 16px; }
-  .menu-btn { min-height: 44px; padding-left: 18px; padding-right: 18px; }
+  /* The menu pill is a separate fixed element; keep it level with the
+     time-window pill (both 48px tall, same top offset). */
+  .menu-shell {
+    top: 16px;
+    top: max(16px, env(safe-area-inset-top));
+    right: 20px;
+    right: max(20px, env(safe-area-inset-right));
+  }
+  .menu-btn { min-height: 48px; padding-left: 18px; padding-right: 18px; }
   .slider {
     bottom: 18px;
     bottom: max(18px, env(safe-area-inset-bottom));
@@ -39,12 +47,13 @@ body {
    Safari 12 resolves the collage's flex height inside the fixed stage to
    zero, so the packer waits forever and the collage stays blank. Give the
    canvas an explicit height from the viewport instead: the static header
-   (~150px) plus the view's top/bottom padding (~96px) sit around it. */
+   (~150px), the view's padding and the bottom page switcher sit around it,
+   so the bottom row of birds stays clear of the switcher. */
 html.legacy-safari .view#v0 { height: 100%; }
 html.legacy-safari #v0 .gcollage {
   -webkit-box-flex: 0;
   -ms-flex: 0 0 auto;
   flex: 0 0 auto;
-  height: calc(100vh - 250px);
+  height: calc(100vh - 290px);
   min-height: 320px;
 }
