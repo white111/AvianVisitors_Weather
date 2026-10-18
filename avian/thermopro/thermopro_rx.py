@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Read 433 MHz weather sensors from an RXB6 receiver on GPIO.
+"""Read weather sensors for the collage badge.
 
-Supported: ThermoPro TX-2 (TP-60S base, channels 1-3) and AcuRite 592TXR
-tower sensors (channels A-C). Both are decoded from the same radio.
+433 MHz, from an RXB6 receiver on GPIO: ThermoPro TX-2 (TP-60S base,
+channels 1-3) and AcuRite 592TXR towers (channels A-C).
+915 MHz, from an RTL-SDR dongle (RTL2832U + R820T2) with --rtl433: La Crosse
+IT+ TX29U / TX29-IT and TX35DTH-IT, decoded by rtl_433.
 
 Wiring (Raspberry Pi header):
     RXB6 VCC  -> pin 1 (3.3 V)   keep it on 3.3 V: a 5 V supply puts 5 V on DATA
@@ -32,6 +34,7 @@ from typing import Dict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from acurite_decode import AcuriteReading, AcuriteTowerDecoder  # noqa: E402
+from rtl433_source import LaCrosseReading, Rtl433Source, rtl433_command  # noqa: E402
 from tx2_decode import Reading, Tx2Decoder  # noqa: E402
 
 DEFAULT_OUT = '/var/lib/avian-thermopro/latest.json'
@@ -118,32 +121,45 @@ def main() -> int:
     parser.add_argument('--print', dest='echo', action='store_true', help='print each reading')
     parser.add_argument('--raw', action='store_true', help='also print every raw frame')
     parser.add_argument('--once', action='store_true', help='exit after the first reading')
+    parser.add_argument('--no-gpio', action='store_true', help='do not use the RXB6 (RTL-SDR only)')
+    parser.add_argument('--rtl433', action='store_true',
+                        help='also run rtl_433 on an RTL-SDR dongle for La Crosse IT+ sensors')
+    parser.add_argument('--rtl433-freq', default='915M', help='rtl_433 frequency (default 915M)')
     args = parser.parse_args()
 
     labels = parse_labels(args.label)
     sensors: Dict[str, dict] = {}
+    last_printed: Dict[str, tuple] = {}
     lock = threading.Lock()
     changed = threading.Event()
     stop = threading.Event()
 
     def record(source: str, channel: str, sensor_id: int, temp_c: float, humidity, extra: dict) -> None:
+        defaults = {'thermopro': 'Channel ', 'acurite': 'AcuRite ', 'lacrosse': 'La Crosse '}
         entry = {
             'source': source,
             'channel': channel,
-            'label': labels.get(channel, ('Channel ' if source == 'thermopro' else 'AcuRite ') + channel),
+            'label': labels.get(channel, defaults[source] + channel) if source != 'lacrosse'
+            else defaults[source] + channel,
             'id': sensor_id,
             'temp_c': temp_c,
             'humidity': humidity,
             'seen': int(time.time()),
         }
         entry.update(extra)
+        key = source + '-' + channel
         with lock:
-            sensors[channel] = entry
+            sensors[key] = entry
         if args.echo:
-            hum = '--' if humidity is None else '%d%%' % humidity
-            print('%s  %-9s ch%s %-10s id=%5d  %5.1f C  %5.1f F  %s' % (
-                time.strftime('%H:%M:%S'), source, channel, entry['label'], sensor_id,
-                temp_c, temp_c * 9 / 5 + 32, hum), flush=True)
+            # La Crosse sensors send every few seconds; print changes or once a minute.
+            now = time.time()
+            previous = last_printed.get(key)
+            if previous is None or previous[1:] != (temp_c, humidity) or now - previous[0] >= 60:
+                last_printed[key] = (now, temp_c, humidity)
+                hum = '--' if humidity is None else '%d%%' % humidity
+                print('%s  %-9s ch%s %-10s id=%5d  %5.1f C  %5.1f F  %s' % (
+                    time.strftime('%H:%M:%S'), source, channel, entry['label'], sensor_id,
+                    temp_c, temp_c * 9 / 5 + 32, hum), flush=True)
         changed.set()
         if args.once:
             stop.set()
@@ -156,6 +172,12 @@ def main() -> int:
         record('acurite', reading.channel, reading.sensor_id, reading.temp_c, reading.humidity,
                {'battery_ok': reading.battery_ok})
 
+    def on_lacrosse(reading: LaCrosseReading) -> None:
+        extra = {'new_battery': reading.new_battery}
+        if reading.battery_ok is not None:
+            extra['battery_ok'] = reading.battery_ok
+        record('lacrosse', str(reading.sensor_id), reading.sensor_id, reading.temp_c, reading.humidity, extra)
+
     def on_frame(raw: str) -> None:
         print('frame %s' % raw, flush=True)
 
@@ -163,7 +185,11 @@ def main() -> int:
         Tx2Decoder(on_reading, on_frame if args.raw else None),
         AcuriteTowerDecoder(on_acurite, on_frame if args.raw else None),
     ]
-    lgpio, handle = open_gpio(args.gpio, args.chip, lgpio_workdir(args.out))
+    if args.no_gpio and not args.rtl433:
+        raise SystemExit('--no-gpio needs --rtl433, otherwise there is nothing to listen to')
+    lgpio = handle = None
+    if not args.no_gpio:
+        lgpio, handle = open_gpio(args.gpio, args.chip, lgpio_workdir(args.out))
     last = {'tick': None}
 
     def on_edge(_chip, _gpio, level, tick_ns):
@@ -176,13 +202,21 @@ def main() -> int:
                 decoder.feed(1 - level, duration_us, tick_ns / 1e9)
         last['tick'] = tick_ns
 
-    callback = lgpio.callback(handle, args.gpio, lgpio.BOTH_EDGES, on_edge)
+    callback = lgpio.callback(handle, args.gpio, lgpio.BOTH_EDGES, on_edge) if lgpio else None
+    sdr = None
+    if args.rtl433:
+        sdr = Rtl433Source(rtl433_command(args.rtl433_freq), on_lacrosse,
+                           lambda message: print(message, file=sys.stderr, flush=True))
+        sdr.start()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     if args.echo:
-        print('Listening on GPIO%d for ThermoPro TX-2 (~50 s) and AcuRite 592TXR (~16 s) sensors...' % args.gpio,
-              flush=True)
+        if lgpio:
+            print('Listening on GPIO%d for ThermoPro TX-2 (~50 s) and AcuRite 592TXR (~16 s) sensors...'
+                  % args.gpio, flush=True)
+        if sdr:
+            print('Listening at %s for La Crosse IT+ sensors (~4 s)...' % args.rtl433_freq, flush=True)
 
     try:
         while not stop.is_set():
@@ -200,8 +234,12 @@ def main() -> int:
                     except OSError as error:
                         print('Could not write %s: %s' % (args.out, error), file=sys.stderr, flush=True)
     finally:
-        callback.cancel()
-        lgpio.gpiochip_close(handle)
+        if sdr:
+            sdr.stop()
+        if callback:
+            callback.cancel()
+        if lgpio:
+            lgpio.gpiochip_close(handle)
     return 0
 
 

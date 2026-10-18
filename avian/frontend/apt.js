@@ -7809,6 +7809,192 @@
     });
   }
 
+  // Weather sensors: every sensor the 433 MHz receiver has heard (or that
+  // already has a saved name), with a display name and a show switch for
+  // the collage badge. Saved through thermopro.php.
+  function sensorAgeText(sensor) {
+    if (!sensor.heard || typeof sensor.age_s !== 'number') return 'not heard since the receiver restarted';
+    if (sensor.age_s < 90) return 'just now';
+    if (sensor.age_s < 3600) return Math.round(sensor.age_s / 60) + ' min ago';
+    return Math.round(sensor.age_s / 3600) + ' h ago';
+  }
+  function sensorReadingText(sensor, units) {
+    if (typeof sensor.temp_c !== 'number') return '';
+    var temp = units === 'C' ? sensor.temp_c : sensor.temp_c * 9 / 5 + 32;
+    return Math.round(temp) + '°' + units + (typeof sensor.humidity === 'number' ? ' ' + sensor.humidity + '%' : '');
+  }
+  function sensorChannelText(sensor) {
+    // La Crosse IT+ sensors have no channel switch, only an id.
+    return sensor.model + (sensor.source === 'lacrosse' ? ' · id ' : ' · channel ') + sensor.channel;
+  }
+  function sensorRowMarkup(sensor, units, available) {
+    var reading = sensorReadingText(sensor, units);
+    var meta = sensorChannelText(sensor) + (reading ? ' · ' + reading : '') + ' · ' + sensorAgeText(sensor);
+    return ''
+      + '<div class="menu-row sensor-row' + (sensor.heard ? '' : ' sensor-quiet') + '" data-sensor-key="' + adminAttr(sensor.key) + '">'
+      + '  <div class="sensor-copy">'
+      + '    <input type="text" class="settings-text sensor-name" data-sensor-name maxlength="24"'
+      + '      autocomplete="off" spellcheck="false" autocapitalize="words"'
+      + '      aria-label="' + adminAttr('Name for ' + sensorChannelText(sensor)) + '"'
+      + '      placeholder="' + adminAttr(sensor.default_label) + '" value="' + adminAttr(sensor.name || '') + '"'
+      + (available ? '' : ' disabled') + '>'
+      + '    <span class="hint sensor-meta">' + adminEsc(meta) + '</span>'
+      + '  </div>'
+      + '  <button type="button" class="switch" role="switch" data-sensor-show'
+      + '    aria-label="' + adminAttr('Show ' + (sensor.name || sensor.default_label) + ' on the collage') + '"'
+      + '    aria-checked="' + (sensor.hidden ? 'false' : 'true') + '"' + (available ? '' : ' disabled') + '></button>'
+      + '</div>';
+  }
+  function sensorListMarkup(state, units) {
+    var list = (state && state.sensors) || [];
+    var available = state && state.ok !== false && state.storage_ok !== false;
+    if (!list.length) {
+      return '<p class="sensors-empty hint">'
+        + (state && state.receiver === false
+          ? 'The 433 MHz receiver has not written any readings yet. Run avian/thermopro/install.sh on the Pi, then sensors appear here as they transmit.'
+          : 'No sensors heard yet. ThermoPro sensors send about every 50 seconds, AcuRite towers about every 16, La Crosse IT+ about every 4.')
+        + '</p>';
+    }
+    return list.map(function (sensor) { return sensorRowMarkup(sensor, units, available); }).join('');
+  }
+  function sensorsRow(state, units) {
+    state = state || {};
+    var available = state.ok !== false && state.storage_ok !== false;
+    var count = (state.sensors || []).filter(function (s) { return s.heard; }).length;
+    var details = 'Sensors heard by the receivers on the Pi: ThermoPro TX-2 (channels 1-3) and AcuRite 592TXR'
+      + ' towers (channels A-C) on the 433 MHz RXB6, and La Crosse IT+ TX29/TX35 sensors on an RTL-SDR'
+      + ' dongle at 915 MHz. New ones appear here on their own. Give each a name for the collage badge,'
+      + ' or switch one off to hide it. Leave a name blank to use the default.';
+    var note = available ? '' : (state.hint || 'sensor settings are unavailable on this station');
+    return ''
+      + '<div class="sensors-control" data-sensors-control>'
+      + '  <div class="menu-row">'
+      + '    <div class="access-copy"><span class="label">Weather sensors</span>'
+      + settingsInfoMarkup('sensorsTip', 'About weather sensors', details)
+      + '      <span class="hint" data-sensors-count>' + (count === 1 ? '1 sensor heard' : count + ' sensors heard') + '</span>'
+      + '    </div>'
+      + '    <button type="button" class="chip" data-sensors-refresh>refresh</button>'
+      + '  </div>'
+      + '  <div class="sensors-list" data-sensors-list>' + sensorListMarkup(state, units) + '</div>'
+      + '  <p class="sensors-status' + (available ? '' : ' err') + '" data-sensors-status role="status" aria-live="polite">' + adminEsc(note) + '</p>'
+      + '</div>';
+  }
+
+  function wireSensorsControl(scope, initialState, unitsFor) {
+    var root = scope.querySelector('[data-sensors-control]');
+    if (!root) return;
+    var listEl = root.querySelector('[data-sensors-list]');
+    var countEl = root.querySelector('[data-sensors-count]');
+    var statusEl = root.querySelector('[data-sensors-status]');
+    var refreshButton = root.querySelector('[data-sensors-refresh]');
+    var state = initialState || {};
+    var timers = {};
+
+    function setStatus(text, isError) {
+      statusEl.textContent = text || '';
+      statusEl.classList.toggle('err', !!isError);
+    }
+    function notifyBadge() {
+      var event;
+      try { event = new Event('avian:sensors-changed'); } catch (e) {
+        event = document.createEvent('Event');
+        event.initEvent('avian:sensors-changed', false, false);
+      }
+      window.dispatchEvent(event);
+    }
+    function render(next) {
+      state = next;
+      // Keep whatever is being typed: rebuild only rows that are not focused.
+      var focused = document.activeElement && listEl.contains(document.activeElement)
+        ? document.activeElement.closest('[data-sensor-key]') : null;
+      if (focused) return;
+      listEl.innerHTML = sensorListMarkup(next, unitsFor());
+      var count = (next.sensors || []).filter(function (s) { return s.heard; }).length;
+      countEl.textContent = count === 1 ? '1 sensor heard' : count + ' sensors heard';
+    }
+    function request(options) {
+      return adminFetch('./avian/api/thermopro.php' + (options ? '' : '?action=config'), options || {
+        credentials: 'same-origin', cache: 'no-store',
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (result) {
+          if (!response.ok || !result.ok) {
+            throw new Error(result.hint ? result.error + ' - ' + result.hint : (result.error || 'could not save the sensor'));
+          }
+          return result;
+        });
+      });
+    }
+    function post(body, doneText) {
+      return request({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+        body: JSON.stringify(body),
+      }).then(function (result) {
+        render(result);
+        notifyBadge();
+        setStatus(doneText);
+        return result;
+      }).catch(function (error) {
+        if (!adminAuthCancelled(error)) setStatus(error && error.message ? error.message : 'could not save the sensor', true);
+        return null;
+      });
+    }
+    function saveName(input) {
+      var row = input.closest('[data-sensor-key]');
+      if (!row) return;
+      var key = row.getAttribute('data-sensor-key');
+      clearTimeout(timers[key]);
+      var name = input.value.trim();
+      if (input.getAttribute('data-saved') === name) return;
+      input.setAttribute('data-saved', name);
+      post({ action: 'name', key: key, name: name },
+        name ? 'saved "' + name + '"' : 'name cleared, using ' + input.placeholder);
+    }
+
+    listEl.querySelectorAll('[data-sensor-name]').forEach(function (input) {
+      input.setAttribute('data-saved', input.value.trim());
+    });
+    listEl.addEventListener('focusin', function (ev) {
+      var input = ev.target.closest('[data-sensor-name]');
+      if (input && !input.hasAttribute('data-saved')) input.setAttribute('data-saved', input.value.trim());
+    });
+    listEl.addEventListener('input', function (ev) {
+      var input = ev.target.closest('[data-sensor-name]');
+      if (!input) return;
+      var key = input.closest('[data-sensor-key]').getAttribute('data-sensor-key');
+      clearTimeout(timers[key]);
+      timers[key] = setTimeout(function () { saveName(input); }, 1200);
+    });
+    listEl.addEventListener('change', function (ev) {
+      var input = ev.target.closest('[data-sensor-name]');
+      if (input) saveName(input);
+    });
+    listEl.addEventListener('keydown', function (ev) {
+      var input = ev.target.closest('[data-sensor-name]');
+      if (input && ev.key === 'Enter') { ev.preventDefault(); input.blur(); saveName(input); }
+    });
+    listEl.addEventListener('click', function (ev) {
+      var toggle = ev.target.closest('[data-sensor-show]');
+      if (!toggle || toggle.disabled) return;
+      var row = toggle.closest('[data-sensor-key]');
+      var show = toggle.getAttribute('aria-checked') !== 'true';
+      toggle.setAttribute('aria-checked', show ? 'true' : 'false');
+      post({ action: 'hide', key: row.getAttribute('data-sensor-key'), hidden: !show },
+        show ? 'shown on the collage' : 'hidden from the collage').then(function (result) {
+        if (!result) toggle.setAttribute('aria-checked', show ? 'false' : 'true');
+      });
+    });
+    refreshButton.addEventListener('click', function () {
+      setStatus('checking...');
+      request(null).then(function (result) {
+        render(result);
+        setStatus('');
+      }).catch(function (error) {
+        if (!adminAuthCancelled(error)) setStatus(error && error.message ? error.message : 'could not load sensors', true);
+      });
+    });
+  }
+
   function birdweatherRow(state) {
     state = state || {};
     var available = state.ok !== false;
@@ -8576,7 +8762,7 @@
   }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle]):not([data-forecast-toggle])').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle]):not([data-forecast-toggle]):not([data-sensor-show])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -8617,7 +8803,7 @@
         else { clearTimeout(autoSaveT); setSaveState(''); }
       });
     });
-    scope.querySelectorAll('input.settings-text:not([data-forecast-query])').forEach(function (inp) {
+    scope.querySelectorAll('input.settings-text:not([data-forecast-query]):not([data-sensor-name])').forEach(function (inp) {
       function stage() {
         pending[inp.dataset.key] = inp.value.trim();
       }
@@ -12740,6 +12926,16 @@
           if (adminAuthCancelled(error)) throw error;
           return { ok: false, hint: 'forecast settings are unavailable' };
         }),
+      adminFetch('./avian/api/thermopro.php?action=config', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            if (r.ok && body.ok) return body;
+            return { ok: false, hint: body.hint || 'sensor settings are unavailable' };
+          });
+        }).catch(function (error) {
+          if (adminAuthCancelled(error)) throw error;
+          return { ok: false, hint: 'sensor settings are unavailable' };
+        }),
     ])
       .then(function (parts) {
         var cfg = parts[0];
@@ -12747,6 +12943,7 @@
         var birdweather = parts[2] || { ok: false };
         var archive = parts[3] || { ok: false, failure_kind: 'network' };
         var forecast = parts[4] || { ok: false };
+        var sensors = parts[5] || { ok: false };
         var v = cfg.values || {};
         var sec = cfg.secrets || {};
         var security = cfg.security || {};
@@ -12785,6 +12982,7 @@
           + '</section><section>'
           + stationRow(v)
           + forecastRow(forecast)
+          + sensorsRow(sensors, forecast.ok !== false && forecast.units === 'C' ? 'C' : (sensors.units === 'C' ? 'C' : 'F'))
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'for regional species filters', sec.EBIRD_API_KEY)
           + '</section><section class="settings-retention">'
@@ -12826,6 +13024,10 @@
         wireBirdweatherControl(adminBody, birdweather);
         wireArchiveControl(adminBody, archive);
         wireForecastControl(adminBody, forecast);
+        wireSensorsControl(adminBody, sensors, function () {
+          var picked = adminBody.querySelector('[data-forecast-units] button[aria-current="true"]');
+          return picked ? picked.dataset.v : 'F';
+        });
         wireSettingsInfo(adminBody);
         if (pendingAdminNotice) {
           var noticeTarget = adminBody.querySelector('[data-lan-auth-status]');

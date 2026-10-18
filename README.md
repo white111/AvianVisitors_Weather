@@ -165,20 +165,21 @@ See [`avian/forwarding/`](avian/forwarding/) for three independent recipes:
 
 ## Weather badge: sensors and local forecast (optional)
 
-The collage can show a small weather badge in the corner with your own 433 MHz sensor readings and a local 5-day forecast. Tap the badge to expand the forecast.
+The collage can show a small weather badge in the corner with your own sensor readings and a local 5-day forecast. Tap the badge to expand the forecast.
 
-### 433 MHz sensors
+### Sensors
 
-An RXB6 receiver wired to the Pi decodes these on the same radio:
+Two receivers feed the badge, and any sensor they hear shows up on its own:
 
-| Sensor | Channels | Sends every |
-| --- | --- | --- |
-| ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | 1, 2, 3 | ~50 s |
-| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | A, B, C | ~16 s |
+| Sensor | Receiver | Identified by | Sends every |
+| --- | --- | --- | --- |
+| ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | RXB6, 433 MHz | channel 1, 2, 3 | ~50 s |
+| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | RXB6, 433 MHz | channel A, B, C | ~16 s |
+| La Crosse IT+ TX29U / TX29-IT, TX35DTH-IT | RTL-SDR dongle, 915 MHz | sensor id | ~4 s |
 
-La Crosse "IT+" sensors such as the TX29U use 915 MHz FSK, which the RXB6 cannot receive.
+**Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Each sensor heard gets a name box (blank uses the default) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`.
 
-**Wiring** (RXB6 to Pi header):
+**RXB6 wiring** (to the Pi header):
 
 | RXB6 | Pi pin |
 | --- | --- |
@@ -187,14 +188,16 @@ La Crosse "IT+" sensors such as the TX29U use 915 MHz FSK, which the RXB6 cannot
 | DATA | 13 (GPIO27) |
 | ANT | 17.3 cm straight wire |
 
-**Install** on the Pi after pulling this branch:
+**RTL-SDR dongle** (RTL2832U with an R820T/R820T2 tuner): plug it into a USB port. A quarter-wave antenna for 915 MHz is about 8.2 cm. The installer installs `rtl_433`, frees the dongle from the TV-tuner driver, and turns on La Crosse sensors when it sees the dongle.
+
+**Install or update** on the Pi after pulling this branch (run it again after every update; it restarts the receiver on the new code):
 
 ```bash
 bash ~/BirdNET-Pi/avian/thermopro/install.sh
 journalctl -fu avian-thermopro     # readings appear as sensors transmit
 ```
 
-Settings live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --label 1=Outside --label A=Porch --print` (use `_` for spaces in labels). Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --raw --no-write`.
+Receiver options live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433`. Add `--no-gpio` if there is no RXB6. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --raw --no-write --rtl433`.
 
 Readings older than 15 minutes are hidden.
 

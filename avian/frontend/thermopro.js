@@ -228,6 +228,8 @@
   });
   // Settings > Local forecast announces changes so the badge follows at once.
   window.addEventListener('avian:forecast-changed', pollForecast);
+  // Settings > Weather sensors does the same for names and show/hide.
+  window.addEventListener('avian:sensors-changed', pollSensors);
 
   // Exposed for tests only.
   window.__avianWeather = { describe: describe, dayName: dayName, render: render };

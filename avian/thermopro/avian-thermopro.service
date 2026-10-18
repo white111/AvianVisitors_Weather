@@ -5,7 +5,7 @@ After=local-fs.target
 [Service]
 Type=simple
 User=__USER__
-SupplementaryGroups=gpio
+SupplementaryGroups=gpio plugdev
 EnvironmentFile=-/etc/avian/thermopro.env
 Environment=LG_WD=/var/lib/avian-thermopro
 WorkingDirectory=/var/lib/avian-thermopro
