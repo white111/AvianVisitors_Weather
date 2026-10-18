@@ -8,7 +8,7 @@ ThermoPro TX-2 (TP-60S base, channels 1-3) and AcuRite 592TXR towers
     RXB6 nearby), or
   - an RXB6 receiver on GPIO (the default without a dongle).
 Add --rtl433-freq 915M (with 433.92M) to also hear La Crosse sensors at 915 MHz;
-the dongle then hops between the bands.
+the dongle then takes turns between the bands.
 
 Wiring (Raspberry Pi header):
     RXB6 VCC  -> pin 1 (3.3 V)   keep it on 3.3 V: a 5 V supply puts 5 V on DATA
@@ -38,7 +38,7 @@ from typing import Dict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from acurite_decode import AcuriteReading, AcuriteTowerDecoder  # noqa: E402
-from rtl433_source import DEFAULT_HOP_S, Rtl433Source, SensorReading, available_protocols, rtl433_command  # noqa: E402
+from rtl433_source import DEFAULT_HOP_S, Rtl433Source, SensorReading, available_protocols, rtl433_commands  # noqa: E402
 from tx2_decode import Reading, Tx2Decoder  # noqa: E402
 
 DEFAULT_OUT = '/var/lib/avian-thermopro/latest.json'
@@ -214,8 +214,8 @@ def main() -> int:
     sdr = None
     if args.rtl433:
         bands = args.rtl433_freq or ['433.92M']
-        sdr = Rtl433Source(rtl433_command(bands, args.rtl433_hop, available_protocols()), on_sdr,
-                           lambda message: print(message, file=sys.stderr, flush=True))
+        sdr = Rtl433Source(rtl433_commands(bands, available_protocols()), on_sdr,
+                           lambda message: print(message, file=sys.stderr, flush=True), args.rtl433_hop)
         sdr.start()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -226,7 +226,7 @@ def main() -> int:
                   % args.gpio, flush=True)
         if sdr:
             print('Listening with the RTL-SDR at %s%s...' % (
-                ' and '.join(bands), ' (hopping every %d s)' % args.rtl433_hop if len(bands) > 1 else ''), flush=True)
+                ' and '.join(bands), ' (taking turns, %d s each)' % args.rtl433_hop if len(bands) > 1 else ''), flush=True)
 
     try:
         while not stop.is_set():

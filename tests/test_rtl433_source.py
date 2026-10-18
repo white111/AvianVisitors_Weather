@@ -9,7 +9,8 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'avian', 'thermopro'))
 
-from rtl433_source import Rtl433Source, available_protocols, parse_rtl433_line, rtl433_command  # noqa: E402
+from rtl433_source import (Rtl433Source, available_protocols, parse_rtl433_line, rtl433_command,  # noqa: E402
+                           rtl433_commands)
 
 # Shapes as printed by rtl_433 25.02 on the station.
 ACURITE = {'time': '2026-10-18 16:10:01', 'model': 'Acurite-Tower', 'id': 666, 'channel': 'A',
@@ -60,21 +61,22 @@ class ParseTest(unittest.TestCase):
 
     def test_command_picks_decoders_by_band(self):
         self.assertEqual(rtl433_command('433.92M'), ['rtl_433', '-f', '433.92M', '-F', 'json', '-R', '40', '-R', '162'])
-        cmd = rtl433_command(['915M'])
+        cmd = rtl433_command('915M')
         self.assertNotIn('-H', cmd)
         for protocol in ('75', '76', '171', '240'):
             self.assertIn(protocol, cmd)
 
-    def test_command_hops_between_bands(self):
-        cmd = rtl433_command(['433.92M', '915M'], hop_seconds=45)
-        self.assertEqual(cmd[:7], ['rtl_433', '-f', '433.92M', '-f', '915M', '-H', '45'])
-        self.assertIn('162', cmd)
-        self.assertIn('171', cmd)
+    def test_one_single_band_command_per_band(self):
+        cmds = rtl433_commands(['433.92M', '915M', '433.92M'])
+        self.assertEqual([c[2] for c in cmds], ['433.92M', '915M'])
+        self.assertTrue(all('-H' not in c for c in cmds))
+        self.assertIn('162', cmds[0])
+        self.assertIn('171', cmds[1])
 
-    def test_command_skips_protocols_the_build_lacks(self):
-        cmd = rtl433_command(['433.92M', '915M'], known={'40', '75', '76', '162', '171'})
-        self.assertNotIn('240', cmd)
-        self.assertIn('171', cmd)
+    def test_commands_skip_protocols_the_build_lacks(self):
+        cmds = rtl433_commands(['433.92M', '915M'], known={'40', '75', '76', '162', '171'})
+        self.assertNotIn('240', cmds[1])
+        self.assertIn('171', cmds[1])
 
     def test_available_protocols_parses_help(self):
         with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fake:
@@ -114,6 +116,33 @@ class SourceTest(unittest.TestCase):
         finally:
             os.unlink(fake.name)
 
+    def test_takes_turns_between_bands(self):
+        scripts = []
+        for frame in (ACURITE, TX29):
+            with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fake:
+                # Report once, then stay up like rtl_433 until the band's turn ends.
+                fake.write('import json, time\nprint(json.dumps(%r), flush=True)\ntime.sleep(60)\n' % frame)
+                scripts.append(fake.name)
+        try:
+            got, done = [], threading.Event()
+
+            def on_reading(reading):
+                got.append(reading.source)
+                if got.count('acurite') >= 2 and 'lacrosse' in got:
+                    done.set()
+
+            source = Rtl433Source([[sys.executable, scripts[0]], [sys.executable, scripts[1]]],
+                                  on_reading, lambda message: None, hop_seconds=10)
+            source._hop_seconds = 1  # keep the test quick
+            source.start()
+            self.assertTrue(done.wait(15))
+            source.stop()
+            self.assertEqual(got[:3], ['acurite', 'lacrosse', 'acurite'])
+        finally:
+            for name in scripts:
+                os.unlink(name)
+
+    def test_missing_binary(self):
         logs = []
         missing = Rtl433Source(['/nonexistent/rtl_433'], lambda r: None, logs.append)
         missing.start()

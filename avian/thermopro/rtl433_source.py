@@ -8,9 +8,12 @@ preferred receiver when a dongle is plugged in.
 At 915 MHz it hears La Crosse sensors: IT+ (TX29-IT, TX35DTH-IT, TX31U-IT)
 and the La Crosse View line (LTV-TH, LTV-WR1, LTV-R1/W1, Breeze Pro).
 
-One dongle hears one band at a time; given several frequencies, rtl_433 hops
-between them (default 60 s each), which still catches every sensor here: the
-ThermoPro sends every ~50 s, the AcuRite every ~16 s, La Crosse every few.
+One dongle hears one band at a time. Given several bands, this module hops
+between them itself (default 60 s each) by restarting rtl_433 on each band:
+rtl_433's own hopping (-H) stopped decoding after the first retune on the
+station's R820T dongle, while a freshly started single-band rtl_433 decodes
+reliably. 60 s windows still catch every sensor here: the ThermoPro sends every
+~50 s, the AcuRite every ~16 s, La Crosse every few seconds.
 
 rtl_433 runs as a child process; its JSON lines become readings for the
 receiver service. Install on the Pi with: sudo apt install rtl-433
@@ -107,39 +110,40 @@ def available_protocols(binary: str = 'rtl_433') -> Optional[Set[str]]:
     return {str(int(n)) for n in found} or None
 
 
-def rtl433_command(frequencies: Union[str, List[str]], hop_seconds: int = DEFAULT_HOP_S,
-                   known: Optional[Set[str]] = None, extra: Optional[List[str]] = None) -> List[str]:
-    """rtl_433 at its default sample rate with the decoders for each band,
-    hopping between the bands when there is more than one."""
-    if isinstance(frequencies, str):
-        frequencies = [frequencies]
-    frequencies = list(dict.fromkeys(frequencies)) or ['433.92M']
-    command = ['rtl_433']
-    for frequency in frequencies:
-        command += ['-f', frequency]
-    if len(frequencies) > 1:
-        command += ['-H', str(int(hop_seconds))]
-    command += ['-F', 'json']
-    protocols: List[str] = []
-    for frequency in frequencies:
-        for protocol in band_protocols(frequency):
-            if protocol not in protocols and (known is None or protocol in known):
-                protocols.append(protocol)
-    for protocol in protocols:
-        command += ['-R', protocol]
+def rtl433_command(frequency: str, known: Optional[Set[str]] = None,
+                   extra: Optional[List[str]] = None) -> List[str]:
+    """rtl_433 on one band, at its default sample rate, with that band's decoders."""
+    command = ['rtl_433', '-f', frequency, '-F', 'json']
+    for protocol in band_protocols(frequency):
+        if known is None or protocol in known:
+            command += ['-R', protocol]
     return command + list(extra or [])
 
 
-class Rtl433Source:
-    """Runs rtl_433 in a thread, restarting it if it exits."""
+def rtl433_commands(frequencies: Union[str, List[str]], known: Optional[Set[str]] = None) -> List[List[str]]:
+    """One rtl_433 command per band, for Rtl433Source to take turns with."""
+    if isinstance(frequencies, str):
+        frequencies = [frequencies]
+    frequencies = list(dict.fromkeys(frequencies)) or ['433.92M']
+    return [rtl433_command(frequency, known) for frequency in frequencies]
 
-    def __init__(self, command: List[str], on_reading: Callable[[SensorReading], None],
-                 log: Callable[[str], None]) -> None:
-        self._command = command
+
+class Rtl433Source:
+    """Runs rtl_433 in a thread. With several band commands it takes turns,
+    hop_seconds on each; a band whose rtl_433 exits on its own is retried."""
+
+    def __init__(self, commands, on_reading: Callable[[SensorReading], None],
+                 log: Callable[[str], None], hop_seconds: int = DEFAULT_HOP_S) -> None:
+        if commands and isinstance(commands[0], str):
+            commands = [commands]
+        self._commands: List[List[str]] = [list(c) for c in commands]
         self._on_reading = on_reading
         self._log = log
+        self._hop_seconds = max(10, int(hop_seconds))
         self._stop = threading.Event()
+        self._window_over = threading.Event()
         self._process: Optional[subprocess.Popen] = None
+        self._announced: Set[int] = set()
         self._thread = threading.Thread(target=self._run, name='rtl_433', daemon=True)
 
     def start(self) -> None:
@@ -147,6 +151,9 @@ class Rtl433Source:
 
     def stop(self) -> None:
         self._stop.set()
+        self._terminate()
+
+    def _terminate(self) -> None:
         process = self._process
         if process is not None and process.poll() is None:
             process.terminate()
@@ -155,14 +162,29 @@ class Rtl433Source:
             except subprocess.TimeoutExpired:
                 process.kill()
 
+    def _end_window(self) -> None:
+        self._window_over.set()
+        self._terminate()
+
     def _run(self) -> None:
+        index = 0
+        hopping = len(self._commands) > 1
         while not self._stop.is_set():
+            command = self._commands[index % len(self._commands)]
+            self._window_over.clear()
             try:
-                self._process = subprocess.Popen(self._command, stdout=subprocess.PIPE, text=True, bufsize=1)
+                self._process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True, bufsize=1)
             except FileNotFoundError:
                 self._log('rtl_433 is not installed (sudo apt install rtl-433); the RTL-SDR receiver is off')
                 return
-            self._log('rtl_433 started: ' + ' '.join(self._command))
+            if index % len(self._commands) not in self._announced:
+                self._announced.add(index % len(self._commands))
+                self._log('rtl_433 started: ' + ' '.join(command)
+                          + (' (taking turns, %d s per band)' % self._hop_seconds if hopping else ''))
+            timer = threading.Timer(self._hop_seconds, self._end_window) if hopping else None
+            if timer:
+                timer.daemon = True
+                timer.start()
             assert self._process.stdout is not None
             for line in self._process.stdout:
                 reading = parse_rtl433_line(line)
@@ -170,10 +192,16 @@ class Rtl433Source:
                     self._on_reading(reading)
                 if self._stop.is_set():
                     break
+            if timer:
+                timer.cancel()
             self._process.stdout.close()
             code = self._process.wait()
             if self._stop.is_set():
                 return
+            if self._window_over.is_set():
+                index += 1          # this band's turn is over; next band
+                continue
             self._log('rtl_433 exited with code %s (is the dongle plugged in?); retrying in %d s'
                       % (code, RESTART_DELAY_S))
             self._stop.wait(RESTART_DELAY_S)
+            index += 1
