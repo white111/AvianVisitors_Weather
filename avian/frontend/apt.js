@@ -12157,7 +12157,10 @@
           var wx = ((tx % max) + max) % max;
           var left = Math.round((tx - cx) * TILE + w / 2);
           var top = Math.round((ty - cy) * TILE + h / 2);
-          html += '<img alt="" draggable="false" style="left:' + left + 'px;top:' + top + 'px" src="https://tile.openstreetmap.org/'
+          // The page sends no Referer (meta referrer), but OpenStreetMap's tile
+          // policy blocks tile requests without one, so tiles send the origin.
+          html += '<img alt="" draggable="false" referrerpolicy="strict-origin-when-cross-origin"'
+            + ' style="left:' + left + 'px;top:' + top + 'px" src="https://tile.openstreetmap.org/'
             + z + '/' + wx + '/' + ty + '.png">';
         }
       }
@@ -12238,7 +12241,9 @@
     function run(q) {
       var mine = ++seq;
       note('searching...');
-      fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&q=' + encodeURIComponent(q))
+      // Nominatim also requires an identifying Referer.
+      fetch('https://nominatim.openstreetmap.org/search?format=json&limit=8&q=' + encodeURIComponent(q),
+        { referrerPolicy: 'strict-origin-when-cross-origin' })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (mine !== seq) return;

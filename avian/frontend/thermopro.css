@@ -162,4 +162,5 @@ body.admin-on .tp-badge { display: none; }
   color: var(--ink-soft);
 }
 .forecast-status.err { color: var(--accent); }
+.forecast-control .forecast-status { display: block; white-space: normal; overflow-wrap: break-word; word-wrap: break-word; }
 .forecast-control[aria-busy="true"] { cursor: progress; }
