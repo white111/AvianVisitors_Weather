@@ -1,0 +1,51 @@
+/* ThermoPro weather badge (thermopro.js). Safari 12 safe: no inset,
+   clamp(), color-mix() or flex gap. */
+.tp-badge {
+  position: fixed;
+  left: 28px;
+  bottom: 34px;
+  bottom: max(34px, env(safe-area-inset-bottom));
+  z-index: 29;
+  padding: 7px 14px;
+  border-radius: 18px;
+  background: var(--paper-2, #f3f2ee);
+  box-shadow: var(--recess, none);
+  color: var(--ink, #1a1612);
+  font-size: 14px;
+  line-height: 1.35;
+  letter-spacing: 0.005em;
+  pointer-events: auto;
+}
+.tp-badge[hidden] { display: none; }
+.tp-row { white-space: nowrap; }
+.tp-label { color: var(--ink-soft, #908576); margin-right: 8px; }
+.tp-temp { font-weight: 600; font-variant-numeric: tabular-nums; }
+.tp-hum { color: var(--ink-soft, #908576); margin-left: 8px; font-variant-numeric: tabular-nums; }
+
+/* Admin screens own the whole window. */
+body.admin-on .tp-badge { display: none; }
+
+/* iPad: line up with the bottom view switcher. */
+@media (pointer: coarse) and (min-width: 701px) and (max-width: 1366px) {
+  .tp-badge {
+    left: 20px;
+    left: max(20px, env(safe-area-inset-left));
+    bottom: 22px;
+    bottom: max(22px, env(safe-area-inset-bottom));
+    font-size: 16px;
+    padding: 9px 16px;
+  }
+}
+
+/* Phones: the bottom switcher fills the width, so sit under the top bar. */
+@media (max-width: 700px) {
+  .tp-badge {
+    left: 14px;
+    bottom: auto;
+    top: 58px;
+    top: calc(58px + env(safe-area-inset-top));
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 12px;
+  }
+}

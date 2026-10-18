@@ -163,6 +163,30 @@ See [`avian/forwarding/`](avian/forwarding/) for three independent recipes:
 
 ---
 
+## ThermoPro temperature badge (optional)
+
+Shows ThermoPro TP-60S remote sensors (TX-2 transmitters, 433 MHz) as a small temperature/humidity badge on the collage, received by an RXB6 module wired to the Pi.
+
+**Wiring** (RXB6 to Pi header):
+
+| RXB6 | Pi pin |
+| --- | --- |
+| VCC | 1 (3.3 V). Do not use 5 V: DATA would then drive 5 V into the GPIO |
+| GND | 6 |
+| DATA | 13 (GPIO27) |
+| ANT | 17.3 cm straight wire |
+
+**Install** on the Pi after pulling this branch:
+
+```bash
+bash ~/BirdNET-Pi/avian/thermopro/install.sh
+journalctl -fu avian-thermopro     # a reading appears about every 50 s
+```
+
+Settings live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --label 1=Outside --label 2=Garage --print` (use `_` for spaces in labels). Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --raw --no-write`.
+
+The badge stays hidden until a reading less than 15 minutes old exists. With more than one channel, each row is labelled.
+
 ## Repo layout
 
 ```
