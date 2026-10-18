@@ -9,7 +9,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'avian', 'thermopro'))
 
-from rtl433_source import Rtl433Source, parse_rtl433_line, rtl433_command  # noqa: E402
+from rtl433_source import Rtl433Source, available_protocols, parse_rtl433_line, rtl433_command  # noqa: E402
 
 # Shapes as printed by rtl_433 25.02 on the station.
 ACURITE = {'time': '2026-10-18 16:10:01', 'model': 'Acurite-Tower', 'id': 666, 'channel': 'A',
@@ -19,6 +19,8 @@ THERMOPRO = {'time': '2026-10-18 16:10:30', 'model': 'Thermopro-TX2', 'subtype':
 PROLOGUE = dict(THERMOPRO, model='Prologue-TH', battery_ok=1)
 TX29 = {'model': 'LaCrosse-TX29IT', 'id': 42, 'battery_ok': 1, 'newbattery': 0, 'temperature_C': 16.2}
 TX35 = {'model': 'LaCrosse-TX35DTHIT', 'id': 7, 'battery_ok': 0, 'temperature_C': -3.45, 'humidity': 81}
+LTV_TH = {'model': 'LaCrosse-TH3', 'id': 0x2D9C14, 'seq': 1, 'battery_ok': 1, 'temperature_C': 19.4, 'humidity': 58}
+LTV_WIND = {'model': 'LaCrosse-BreezePro', 'id': 0x18AB31, 'wind_avg_km_h': 3.1}
 
 
 class ParseTest(unittest.TestCase):
@@ -42,6 +44,11 @@ class ParseTest(unittest.TestCase):
         self.assertEqual((r.channel, r.temp_c, r.humidity, r.battery_ok), ('7', -3.5, 81, False))
         self.assertIsNone(parse_rtl433_line(json.dumps(dict(TX29, humidity=106))).humidity)
 
+    def test_lacrosse_view_sensor_by_id(self):
+        r = parse_rtl433_line(json.dumps(LTV_TH))
+        self.assertEqual((r.source, r.channel, r.temp_c, r.humidity), ('lacrosse', str(0x2D9C14), 19.4, 58))
+        self.assertIsNone(parse_rtl433_line(json.dumps(LTV_WIND)))  # no temperature to show
+
     def test_ignores_other_lines(self):
         for line in ('', 'not json', '[]',
                      json.dumps(dict(ACURITE, channel='D')),
@@ -53,7 +60,36 @@ class ParseTest(unittest.TestCase):
 
     def test_command_picks_decoders_by_band(self):
         self.assertEqual(rtl433_command('433.92M'), ['rtl_433', '-f', '433.92M', '-F', 'json', '-R', '40', '-R', '162'])
-        self.assertEqual(rtl433_command('915M')[-4:], ['-R', '75', '-R', '76'])
+        cmd = rtl433_command(['915M'])
+        self.assertNotIn('-H', cmd)
+        for protocol in ('75', '76', '171', '240'):
+            self.assertIn(protocol, cmd)
+
+    def test_command_hops_between_bands(self):
+        cmd = rtl433_command(['433.92M', '915M'], hop_seconds=45)
+        self.assertEqual(cmd[:7], ['rtl_433', '-f', '433.92M', '-f', '915M', '-H', '45'])
+        self.assertIn('162', cmd)
+        self.assertIn('171', cmd)
+
+    def test_command_skips_protocols_the_build_lacks(self):
+        cmd = rtl433_command(['433.92M', '915M'], known={'40', '75', '76', '162', '171'})
+        self.assertNotIn('240', cmd)
+        self.assertIn('171', cmd)
+
+    def test_available_protocols_parses_help(self):
+        with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fake:
+            fake.write('import sys\nprint("  [40]  Acurite 592TXR\\n  [162]* ThermoPro-TX2\\n[240]  LaCrosse TX31U-IT", file=sys.stderr)\n')
+        try:
+            os.chmod(fake.name, 0o755)
+            wrapper = fake.name + '.sh'
+            with open(wrapper, 'w') as handle:
+                handle.write('#!/bin/sh\nexec %s %s "$@"\n' % (sys.executable, fake.name))
+            os.chmod(wrapper, 0o755)
+            self.assertEqual(available_protocols(wrapper), {'40', '162', '240'})
+            self.assertIsNone(available_protocols('/nonexistent/rtl_433'))
+        finally:
+            os.unlink(fake.name)
+            os.unlink(wrapper)
 
 
 class SourceTest(unittest.TestCase):

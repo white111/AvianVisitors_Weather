@@ -5,8 +5,12 @@ At 433.92 MHz (the default) rtl_433 decodes the AcuRite 592TXR tower
 the RXB6, and a streaming dongle deafens a nearby RXB6 anyway, so this is the
 preferred receiver when a dongle is plugged in.
 
-At 915 MHz it listens for La Crosse IT+ TX29-IT / TX35DTH-IT (protocols 76
-and 75) instead; one dongle hears one band at a time.
+At 915 MHz it hears La Crosse sensors: IT+ (TX29-IT, TX35DTH-IT, TX31U-IT)
+and the La Crosse View line (LTV-TH, LTV-WR1, LTV-R1/W1, Breeze Pro).
+
+One dongle hears one band at a time; given several frequencies, rtl_433 hops
+between them (default 60 s each), which still catches every sensor here: the
+ThermoPro sends every ~50 s, the AcuRite every ~16 s, La Crosse every few.
 
 rtl_433 runs as a child process; its JSON lines become readings for the
 receiver service. Install on the Pi with: sudo apt install rtl-433
@@ -15,13 +19,16 @@ receiver service. Install on the Pi with: sudo apt install rtl-433
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import threading
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Set, Union
 
 PROTOCOLS_433 = ['40', '162']   # Acurite-Tower, Thermopro-TX2 (not 3: Prologue repeats TX-2 frames)
-PROTOCOLS_915 = ['75', '76']    # LaCrosse TX35DTH-IT, TX29IT
+# LaCrosse TX35DTH-IT, TX29IT, LTV Breeze Pro, LTV-WR1, LTV-TH, LTV-R1/W1, TX31U-IT
+PROTOCOLS_915 = ['75', '76', '166', '170', '171', '175', '240']
+DEFAULT_HOP_S = 60
 RESTART_DELAY_S = 15
 
 
@@ -52,7 +59,7 @@ def parse_rtl433_line(line: str) -> Optional[SensorReading]:
     model = str(data.get('model', ''))
     sensor_id = data.get('id')
     temp_c = data.get('temperature_C')
-    if not isinstance(sensor_id, int) or not 0 <= sensor_id <= 0xFFFF:
+    if not isinstance(sensor_id, int) or not 0 <= sensor_id <= 0xFFFFFFF:
         return None
     if not isinstance(temp_c, (int, float)) or not -40.0 <= temp_c <= 70.0:
         return None
@@ -64,9 +71,9 @@ def parse_rtl433_line(line: str) -> Optional[SensorReading]:
         source, channel = 'thermopro', str(data.get('channel', ''))
         if channel not in ('1', '2', '3'):
             return None
-    elif model.startswith(('LaCrosse-TX29', 'LaCrosse-TX35')):
-        if sensor_id > 999:
-            return None
+    elif model.startswith('LaCrosse-'):
+        # Any La Crosse model that reports a temperature: IT+ and La Crosse View
+        # sensors alike. They have no channel switch, so the id names them.
         source, channel = 'lacrosse', str(sensor_id)
     else:
         return None
@@ -81,14 +88,43 @@ def parse_rtl433_line(line: str) -> Optional[SensorReading]:
     )
 
 
-def rtl433_command(frequency: str, extra: Optional[List[str]] = None) -> List[str]:
-    """rtl_433 at its default sample rate, with the decoders for that band."""
+def band_protocols(frequency: str) -> List[str]:
     try:
         megahertz = float(frequency.rstrip('MmHhZz'))
     except ValueError:
         megahertz = 433.92
-    protocols = PROTOCOLS_915 if megahertz >= 800 else PROTOCOLS_433
-    command = ['rtl_433', '-f', frequency, '-F', 'json']
+    return PROTOCOLS_915 if megahertz >= 800 else PROTOCOLS_433
+
+
+def available_protocols(binary: str = 'rtl_433') -> Optional[Set[str]]:
+    """Protocol numbers this rtl_433 build knows, so an older build is not
+    handed a number it rejects. None when it cannot be asked."""
+    try:
+        result = subprocess.run([binary, '-R', 'help'], capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = set(re.findall(r'^\s*\[(\d+)\]', result.stdout + result.stderr, re.MULTILINE))
+    return {str(int(n)) for n in found} or None
+
+
+def rtl433_command(frequencies: Union[str, List[str]], hop_seconds: int = DEFAULT_HOP_S,
+                   known: Optional[Set[str]] = None, extra: Optional[List[str]] = None) -> List[str]:
+    """rtl_433 at its default sample rate with the decoders for each band,
+    hopping between the bands when there is more than one."""
+    if isinstance(frequencies, str):
+        frequencies = [frequencies]
+    frequencies = list(dict.fromkeys(frequencies)) or ['433.92M']
+    command = ['rtl_433']
+    for frequency in frequencies:
+        command += ['-f', frequency]
+    if len(frequencies) > 1:
+        command += ['-H', str(int(hop_seconds))]
+    command += ['-F', 'json']
+    protocols: List[str] = []
+    for frequency in frequencies:
+        for protocol in band_protocols(frequency):
+            if protocol not in protocols and (known is None or protocol in known):
+                protocols.append(protocol)
     for protocol in protocols:
         command += ['-R', protocol]
     return command + list(extra or [])

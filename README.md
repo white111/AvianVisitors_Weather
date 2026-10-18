@@ -175,11 +175,11 @@ Any sensor the receiver hears shows up on its own:
 | --- | --- | --- |
 | ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | channel 1, 2, 3 | ~50 s |
 | AcuRite 592TXR tower (00592TXR, 00592TXRA2) | channel A, B, C | ~16 s |
-| La Crosse IT+ TX29-IT, TX35DTH-IT (915 MHz) | sensor id | ~4 s |
+| La Crosse 915 MHz: IT+ (TX29-IT, TX35DTH-IT, TX31U-IT) and La Crosse View (LTV-TH, LTV-WR1, ...) | sensor id | a few seconds |
 
 **Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Each sensor heard gets a name box (blank uses the default) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`.
 
-**Receivers.** An **RTL-SDR dongle** (RTL2832U with an R820T/R820T2 tuner) running `rtl_433` at 433.92 MHz is the preferred receiver: it hears the AcuRite and ThermoPro far better than an RXB6. Plug it into a USB port and run the installer; it installs `rtl_433`, frees the dongle from the TV-tuner driver, and switches the service to it (`--rtl433 --no-gpio`). A streaming dongle deafens an RXB6 nearby, so the two are not run together. One dongle hears one band: `--rtl433-freq 915M` listens for La Crosse IT+ instead of the 433 MHz sensors.
+**Receivers.** An **RTL-SDR dongle** (RTL2832U with an R820T/R820T2 tuner) running `rtl_433` at 433.92 MHz is the preferred receiver: it hears the AcuRite and ThermoPro far better than an RXB6. Plug it into a USB port and run the installer; it installs `rtl_433`, frees the dongle from the TV-tuner driver, and switches the service to it (`--rtl433 --no-gpio`). A streaming dongle deafens an RXB6 nearby, so the two are not run together. One dongle hears one band at a time, so with `--rtl433-freq 433.92M --rtl433-freq 915M` (what the installer sets) it hops between them, 60 s each (`--rtl433-hop`). Every sensor is still heard each cycle; a second dongle would give continuous coverage of both bands.
 
 Without a dongle, an **RXB6** on GPIO decodes the ThermoPro and AcuRite itself:
 
@@ -197,7 +197,7 @@ bash ~/BirdNET-Pi/avian/thermopro/install.sh
 journalctl -fu avian-thermopro     # readings appear as sensors transmit
 ```
 
-Receiver options live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --no-gpio`. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
+Receiver options live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --no-gpio --rtl433-freq 433.92M --rtl433-freq 915M`. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
 
 Readings older than 15 minutes are hidden.
 

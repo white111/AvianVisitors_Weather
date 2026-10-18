@@ -62,7 +62,7 @@ function sensors_clean_name(mixed $value): string {
 
 function sensors_valid_key(mixed $value): ?string {
     $key = is_string($value) ? $value : '';
-    return preg_match('/^(thermopro-[123]|acurite-[ABC]|lacrosse-\d{1,3})$/', $key) === 1 ? $key : null;
+    return preg_match('/^(thermopro-[123]|acurite-[ABC]|lacrosse-\d{1,9})$/', $key) === 1 ? $key : null;
 }
 
 function sensors_source(mixed $value): string {

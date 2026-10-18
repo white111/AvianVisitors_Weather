@@ -49,6 +49,7 @@ class SensorsApiTest(unittest.TestCase):
             {'channel': 2, 'label': 'Old', 'temp_c': 20, 'seen': now - 100},
             {'source': 'acurite', 'channel': 'Z', 'temp_c': 1, 'seen': now},
             {'source': 'lacrosse', 'channel': '42', 'temp_c': 16.2, 'humidity': None, 'seen': now - 2},
+            {'source': 'lacrosse', 'channel': '2989076', 'temp_c': 19.4, 'humidity': 58, 'seen': now - 1},
         ]}))
 
     def tearDown(self):
@@ -68,7 +69,7 @@ class SensorsApiTest(unittest.TestCase):
 
     def test_public_uses_receiver_labels_and_drops_bad_channels(self):
         self.assertEqual(self.labels(), {'thermopro-1': 'Outside', 'acurite-A': 'AcuRite A', 'thermopro-2': 'Old',
-                                         'lacrosse-42': 'La Crosse 42'})
+                                         'lacrosse-42': 'La Crosse 42', 'lacrosse-2989076': 'La Crosse 2989076'})
 
     def test_name_overrides_and_blank_restores(self):
         self.post({'action': 'name', 'key': 'acurite-A', 'name': '  Back   porch '})
@@ -86,7 +87,8 @@ class SensorsApiTest(unittest.TestCase):
         self.post({'action': 'name', 'key': 'acurite-C', 'name': 'Garage'})
         view = self.call('config')
         rows = {s['key']: s for s in view['sensors']}
-        self.assertEqual(sorted(rows), ['acurite-A', 'acurite-C', 'lacrosse-42', 'thermopro-1', 'thermopro-2'])
+        self.assertEqual(sorted(rows), ['acurite-A', 'acurite-C', 'lacrosse-2989076', 'lacrosse-42', 'thermopro-1',
+                                        'thermopro-2'])
         self.assertEqual(rows['lacrosse-42']['model'], 'La Crosse IT+')
         self.assertTrue(rows['acurite-A']['heard'])
         self.assertEqual(rows['acurite-A']['model'], 'AcuRite 592TXR')
@@ -102,7 +104,7 @@ class SensorsApiTest(unittest.TestCase):
     def test_rejects_bad_input(self):
         self.assertFalse(self.post({'action': 'name', 'key': 'acurite-Z', 'name': 'x'})['ok'])
         self.assertFalse(self.post({'action': 'name', 'key': '../etc', 'name': 'x'})['ok'])
-        self.assertFalse(self.post({'action': 'name', 'key': 'lacrosse-1234', 'name': 'x'})['ok'])
+        self.assertFalse(self.post({'action': 'name', 'key': 'lacrosse-1234567890', 'name': 'x'})['ok'])
         self.assertFalse(self.post({'action': 'name', 'key': 'acurite-A', 'name': 5})['ok'])
         self.assertFalse(self.post({'action': 'hide', 'key': 'acurite-A', 'hidden': 'yes'})['ok'])
         self.assertFalse(self.post({'action': 'bogus', 'key': 'acurite-A'})['ok'])
