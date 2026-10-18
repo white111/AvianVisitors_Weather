@@ -62,7 +62,24 @@ def write_json_atomic(path: str, payload: dict) -> None:
         raise
 
 
-def open_gpio(gpio: int, chip: int):
+def lgpio_workdir(out_path: str) -> str:
+    """Pick a writable folder for lgpio's notification pipe.
+
+    lgpio creates .lgd-nfy* pipes in LG_WD or the current directory; under
+    systemd that is / and the import fails. Prefer LG_WD, then the output
+    folder (the service's StateDirectory), then the temp folder.
+    """
+    candidates = [os.environ.get('LG_WD'), os.path.dirname(os.path.abspath(out_path)),
+                  tempfile.gettempdir()]
+    for path in candidates:
+        if path and os.path.isdir(path) and os.access(path, os.W_OK | os.X_OK):
+            return path
+    raise SystemExit('No writable folder for lgpio (set LG_WD)')
+
+
+def open_gpio(gpio: int, chip: int, workdir: str):
+    os.environ['LG_WD'] = workdir
+    os.chdir(workdir)
     import lgpio  # imported here so --help works without it
 
     chips = [chip] if chip >= 0 else [0, 4]
@@ -130,7 +147,7 @@ def main() -> int:
             print('frame %s' % raw, flush=True)
 
     decoder = Tx2Decoder(on_reading, on_frame if args.raw else None)
-    lgpio, handle = open_gpio(args.gpio, args.chip)
+    lgpio, handle = open_gpio(args.gpio, args.chip, lgpio_workdir(args.out))
     last = {'tick': None}
 
     def on_edge(_chip, _gpio, level, tick_ns):
