@@ -38,7 +38,7 @@ class ParseTest(unittest.TestCase):
 
     def test_command(self):
         cmd = rtl433_command('915M')
-        self.assertEqual(cmd[:5], ['rtl_433', '-f', '915M', '-F', 'json'])
+        self.assertEqual(cmd[:7], ['rtl_433', '-f', '915M', '-s', '250k', '-F', 'json'])
         self.assertIn('76', cmd)
         self.assertIn('75', cmd)
 

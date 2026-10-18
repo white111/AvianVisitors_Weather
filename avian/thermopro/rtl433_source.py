@@ -62,8 +62,14 @@ def parse_rtl433_line(line: str) -> Optional[LaCrosseReading]:
     )
 
 
+# La Crosse IT+ is 17.24 kbit/s FSK; 250 kHz sampling is plenty and costs a
+# quarter of rtl_433's newer 1 MHz default, which matters on a Pi that is
+# also running BirdNET (and timing the RXB6 on GPIO).
+RTL433_SAMPLE_RATE = '250k'
+
+
 def rtl433_command(frequency: str, extra: Optional[List[str]] = None) -> List[str]:
-    command = ['rtl_433', '-f', frequency, '-F', 'json']
+    command = ['rtl_433', '-f', frequency, '-s', RTL433_SAMPLE_RATE, '-F', 'json']
     for protocol in RTL433_PROTOCOLS:
         command += ['-R', protocol]
     return command + list(extra or [])
