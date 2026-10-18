@@ -163,9 +163,20 @@ See [`avian/forwarding/`](avian/forwarding/) for three independent recipes:
 
 ---
 
-## ThermoPro temperature badge (optional)
+## Weather badge: sensors and local forecast (optional)
 
-Shows ThermoPro TP-60S remote sensors (TX-2 transmitters, 433 MHz) as a small temperature/humidity badge on the collage, received by an RXB6 module wired to the Pi.
+The collage can show a small weather badge in the corner with your own 433 MHz sensor readings and a local 5-day forecast. Tap the badge to expand the forecast.
+
+### 433 MHz sensors
+
+An RXB6 receiver wired to the Pi decodes these on the same radio:
+
+| Sensor | Channels | Sends every |
+| --- | --- | --- |
+| ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | 1, 2, 3 | ~50 s |
+| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | A, B, C | ~16 s |
+
+La Crosse "IT+" sensors such as the TX29U use 915 MHz FSK, which the RXB6 cannot receive.
 
 **Wiring** (RXB6 to Pi header):
 
@@ -180,12 +191,18 @@ Shows ThermoPro TP-60S remote sensors (TX-2 transmitters, 433 MHz) as a small te
 
 ```bash
 bash ~/BirdNET-Pi/avian/thermopro/install.sh
-journalctl -fu avian-thermopro     # a reading appears about every 50 s
+journalctl -fu avian-thermopro     # readings appear as sensors transmit
 ```
 
-Settings live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --label 1=Outside --label 2=Garage --print` (use `_` for spaces in labels). Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --raw --no-write`.
+Settings live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --label 1=Outside --label A=Porch --print` (use `_` for spaces in labels). Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --raw --no-write`.
 
-The badge stays hidden until a reading less than 15 minutes old exists. With more than one channel, each row is labelled.
+Readings older than 15 minutes are hidden.
+
+### Local forecast
+
+In the pibird menu, open **Settings** and find **Local forecast** under Station location. Type a city (`San Jose, CA`) or a ZIP code (`95120`) and press **set**. If the name is ambiguous, pick the right place from the suggestions. You can also switch between °F and °C and turn the forecast on or off there.
+
+Forecasts come from [Open-Meteo](https://open-meteo.com/) (free, no API key) and refresh every 30 minutes. Only the chosen place is sent. The settings and cache live in `/var/lib/avian-forecast`, which `install.sh` creates.
 
 ## Repo layout
 

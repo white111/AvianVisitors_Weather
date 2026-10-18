@@ -1,5 +1,6 @@
 <?php
-// AvianVisitors - latest ThermoPro TX-2 readings for the collage weather badge.
+// AvianVisitors - latest 433 MHz sensor readings (ThermoPro TX-2, AcuRite
+// 592TXR) for the collage weather badge.
 // Written by avian/thermopro/thermopro_rx.py (service avian-thermopro).
 // Read-only and public like the collage itself: room/outdoor temperature only.
 
@@ -34,13 +35,15 @@ if (!is_array($data)) {
 
 $units = (($data['units'] ?? 'F') === 'C') ? 'C' : 'F';
 $sensors = [];
-foreach (array_slice((array) ($data['sensors'] ?? []), 0, 3) as $sensor) {
+foreach (array_slice((array) ($data['sensors'] ?? []), 0, 6) as $sensor) {
     if (!is_array($sensor) || !is_numeric($sensor['temp_c'] ?? null)) continue;
-    $channel = (int) ($sensor['channel'] ?? 0);
-    if ($channel < 1 || $channel > 3) continue;
+    // ThermoPro channels are 1-3, AcuRite channels A-C.
+    $channel = strtoupper((string) ($sensor['channel'] ?? ''));
+    if (!in_array($channel, ['1', '2', '3', 'A', 'B', 'C'], true)) continue;
     $seen = (int) ($sensor['seen'] ?? 0);
     $humidity = $sensor['humidity'] ?? null;
     $sensors[] = [
+        'source' => (($sensor['source'] ?? '') === 'acurite') ? 'acurite' : 'thermopro',
         'channel' => $channel,
         'label' => substr((string) ($sensor['label'] ?? ('Channel ' . $channel)), 0, 24),
         'temp_c' => round((float) $sensor['temp_c'], 1),

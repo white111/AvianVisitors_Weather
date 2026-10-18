@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Read ThermoPro TX-2 sensors (TP-60S) from an RXB6 433 MHz receiver on GPIO.
+"""Read 433 MHz weather sensors from an RXB6 receiver on GPIO.
+
+Supported: ThermoPro TX-2 (TP-60S base, channels 1-3) and AcuRite 592TXR
+tower sensors (channels A-C). Both are decoded from the same radio.
 
 Wiring (Raspberry Pi header):
     RXB6 VCC  -> pin 1 (3.3 V)   keep it on 3.3 V: a 5 V supply puts 5 V on DATA
@@ -28,20 +31,22 @@ import time
 from typing import Dict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from acurite_decode import AcuriteReading, AcuriteTowerDecoder  # noqa: E402
 from tx2_decode import Reading, Tx2Decoder  # noqa: E402
 
 DEFAULT_OUT = '/var/lib/avian-thermopro/latest.json'
 # Ignore edges shorter than this; RXB6 noise is mostly sub-100 us glitches.
-GLITCH_US = 120
+GLITCH_US = 100
 
 
 def parse_labels(items):
     labels = {}
     for item in items or []:
         channel, sep, name = item.partition('=')
-        if not sep or channel.strip() not in ('1', '2', '3') or not name.strip():
-            raise SystemExit('--label must look like 1=Outside (channel 1-3)')
-        labels[int(channel)] = name.strip().replace('_', ' ')[:24]
+        channel = channel.strip().upper()
+        if not sep or channel not in ('1', '2', '3', 'A', 'B', 'C') or not name.strip():
+            raise SystemExit('--label must look like 1=Outside (ThermoPro 1-3) or A=Porch (AcuRite A-C)')
+        labels[channel] = name.strip().replace('_', ' ')[:24]
     return labels
 
 
@@ -105,48 +110,59 @@ def main() -> int:
     parser.add_argument('--gpio', type=int, default=27, help='BCM GPIO for RXB6 DATA (default 27)')
     parser.add_argument('--chip', type=int, default=-1, help='gpiochip number (default: try 0, then 4)')
     parser.add_argument('--label', action='append', metavar='CH=NAME',
-                        help='name a channel, e.g. --label 1=Outside (use _ for spaces)')
+                        help='name a channel: ThermoPro 1-3 or AcuRite A-C, e.g. --label 1=Outside'
+                             ' --label A=Porch (use _ for spaces)')
     parser.add_argument('--units', choices=('F', 'C'), default='F', help='units shown on the collage')
     parser.add_argument('--out', default=DEFAULT_OUT, help='JSON file for the web badge')
     parser.add_argument('--no-write', action='store_true', help='do not write the JSON file')
     parser.add_argument('--print', dest='echo', action='store_true', help='print each reading')
-    parser.add_argument('--raw', action='store_true', help='also print every raw 36-bit frame')
+    parser.add_argument('--raw', action='store_true', help='also print every raw frame')
     parser.add_argument('--once', action='store_true', help='exit after the first reading')
     args = parser.parse_args()
 
     labels = parse_labels(args.label)
-    sensors: Dict[int, dict] = {}
+    sensors: Dict[str, dict] = {}
     lock = threading.Lock()
     changed = threading.Event()
     stop = threading.Event()
 
-    def on_reading(reading: Reading) -> None:
+    def record(source: str, channel: str, sensor_id: int, temp_c: float, humidity, extra: dict) -> None:
         entry = {
-            'channel': reading.channel,
-            'label': labels.get(reading.channel, 'Channel %d' % reading.channel),
-            'id': reading.sensor_id,
-            'temp_c': reading.temp_c,
-            'humidity': reading.humidity,
-            'battery_flag': reading.battery_flag,
+            'source': source,
+            'channel': channel,
+            'label': labels.get(channel, ('Channel ' if source == 'thermopro' else 'AcuRite ') + channel),
+            'id': sensor_id,
+            'temp_c': temp_c,
+            'humidity': humidity,
             'seen': int(time.time()),
         }
+        entry.update(extra)
         with lock:
-            sensors[reading.channel] = entry
+            sensors[channel] = entry
         if args.echo:
-            temp_f = reading.temp_c * 9 / 5 + 32
-            hum = '--' if reading.humidity is None else '%d%%' % reading.humidity
-            print('%s  ch%d %-10s id=%3d  %5.1f C  %5.1f F  %s' % (
-                time.strftime('%H:%M:%S'), reading.channel, entry['label'],
-                reading.sensor_id, reading.temp_c, temp_f, hum), flush=True)
+            hum = '--' if humidity is None else '%d%%' % humidity
+            print('%s  %-9s ch%s %-10s id=%5d  %5.1f C  %5.1f F  %s' % (
+                time.strftime('%H:%M:%S'), source, channel, entry['label'], sensor_id,
+                temp_c, temp_c * 9 / 5 + 32, hum), flush=True)
         changed.set()
         if args.once:
             stop.set()
 
-    def on_frame(raw: str) -> None:
-        if args.raw:
-            print('frame %s' % raw, flush=True)
+    def on_reading(reading: Reading) -> None:
+        record('thermopro', str(reading.channel), reading.sensor_id, reading.temp_c, reading.humidity,
+               {'battery_flag': reading.battery_flag})
 
-    decoder = Tx2Decoder(on_reading, on_frame if args.raw else None)
+    def on_acurite(reading: AcuriteReading) -> None:
+        record('acurite', reading.channel, reading.sensor_id, reading.temp_c, reading.humidity,
+               {'battery_ok': reading.battery_ok})
+
+    def on_frame(raw: str) -> None:
+        print('frame %s' % raw, flush=True)
+
+    decoders = [
+        Tx2Decoder(on_reading, on_frame if args.raw else None),
+        AcuriteTowerDecoder(on_acurite, on_frame if args.raw else None),
+    ]
     lgpio, handle = open_gpio(args.gpio, args.chip, lgpio_workdir(args.out))
     last = {'tick': None}
 
@@ -155,7 +171,9 @@ def main() -> int:
             return
         if last['tick'] is not None:
             # The time since the previous edge belongs to the previous level.
-            decoder.feed(1 - level, (tick_ns - last['tick']) / 1000.0, tick_ns / 1e9)
+            duration_us = (tick_ns - last['tick']) / 1000.0
+            for decoder in decoders:
+                decoder.feed(1 - level, duration_us, tick_ns / 1e9)
         last['tick'] = tick_ns
 
     callback = lgpio.callback(handle, args.gpio, lgpio.BOTH_EDGES, on_edge)
@@ -163,7 +181,7 @@ def main() -> int:
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     if args.echo:
-        print('Listening on GPIO%d for ThermoPro TX-2 sensors (they send every ~50 s)...' % args.gpio,
+        print('Listening on GPIO%d for ThermoPro TX-2 (~50 s) and AcuRite 592TXR (~16 s) sensors...' % args.gpio,
               flush=True)
 
     try:
