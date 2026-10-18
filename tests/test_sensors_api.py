@@ -50,6 +50,11 @@ class SensorsApiTest(unittest.TestCase):
             {'source': 'acurite', 'channel': 'Z', 'temp_c': 1, 'seen': now},
             {'source': 'lacrosse', 'channel': '42', 'temp_c': 16.2, 'humidity': None, 'seen': now - 2},
             {'source': 'lacrosse', 'channel': '2989076', 'temp_c': 19.4, 'humidity': 58, 'seen': now - 1},
+            {'source': 'lacrosse', 'channel': '8994842', 'model': 'LaCrosse-BreezePro', 'temp_c': 24.5, 'humidity': 44,
+             'wind_avg_kmh': 9.7, 'wind_dir_deg': 315, 'seen': now - 3},
+            {'source': 'lacrosse', 'channel': '17', 'model': 'LaCrosse-WindSensor', 'temp_c': None,
+             'wind_avg_kmh': 9.0, 'wind_max_kmh': 14.4, 'seen': now - 3},
+            {'source': 'lacrosse', 'channel': '18', 'temp_c': None, 'seen': now},
         ]}))
 
     def tearDown(self):
@@ -69,13 +74,23 @@ class SensorsApiTest(unittest.TestCase):
 
     def test_public_uses_receiver_labels_and_drops_bad_channels(self):
         self.assertEqual(self.labels(), {'thermopro-1': 'Outside', 'acurite-A': 'AcuRite A', 'thermopro-2': 'Old',
-                                         'lacrosse-42': 'La Crosse 42', 'lacrosse-2989076': 'La Crosse 2989076'})
+                                         'lacrosse-42': 'La Crosse 42', 'lacrosse-2989076': 'La Crosse 2989076',
+                                         'lacrosse-8994842': 'La Crosse 8994842', 'lacrosse-17': 'La Crosse 17'})
 
     def test_name_overrides_and_blank_restores(self):
         self.post({'action': 'name', 'key': 'acurite-A', 'name': '  Back   porch '})
         self.assertEqual(self.labels()['acurite-A'], 'Back porch')
         self.post({'action': 'name', 'key': 'acurite-A', 'name': ''})
         self.assertEqual(self.labels()['acurite-A'], 'AcuRite A')
+
+    def test_wind_is_passed_through(self):
+        rows = {s['key']: s for s in self.call('public')['sensors']}
+        breeze = rows['lacrosse-8994842']
+        self.assertEqual((breeze['temp_c'], breeze['wind_avg_kmh'], breeze['wind_dir_deg']), (24.5, 9.7, 315))
+        self.assertNotIn('wind_max_kmh', breeze)
+        wind_only = rows['lacrosse-17']
+        self.assertEqual((wind_only['temp_c'], wind_only['wind_max_kmh']), (None, 14.4))
+        self.assertNotIn('wind_avg_kmh', rows['thermopro-1'])
 
     def test_hide_and_show(self):
         self.post({'action': 'hide', 'key': 'thermopro-2', 'hidden': True})
@@ -87,9 +102,11 @@ class SensorsApiTest(unittest.TestCase):
         self.post({'action': 'name', 'key': 'acurite-C', 'name': 'Garage'})
         view = self.call('config')
         rows = {s['key']: s for s in view['sensors']}
-        self.assertEqual(sorted(rows), ['acurite-A', 'acurite-C', 'lacrosse-2989076', 'lacrosse-42', 'thermopro-1',
-                                        'thermopro-2'])
+        self.assertEqual(sorted(rows), ['acurite-A', 'acurite-C', 'lacrosse-17', 'lacrosse-2989076', 'lacrosse-42',
+                                        'lacrosse-8994842', 'thermopro-1', 'thermopro-2'])
         self.assertEqual(rows['lacrosse-42']['model'], 'La Crosse IT+')
+        self.assertEqual(rows['lacrosse-8994842']['model'], 'La Crosse BreezePro')
+        self.assertEqual(rows['acurite-A']['model'], 'AcuRite 592TXR')
         self.assertTrue(rows['acurite-A']['heard'])
         self.assertEqual(rows['acurite-A']['model'], 'AcuRite 592TXR')
         self.assertFalse(rows['acurite-C']['heard'])

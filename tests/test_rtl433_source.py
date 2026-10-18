@@ -21,7 +21,9 @@ PROLOGUE = dict(THERMOPRO, model='Prologue-TH', battery_ok=1)
 TX29 = {'model': 'LaCrosse-TX29IT', 'id': 42, 'battery_ok': 1, 'newbattery': 0, 'temperature_C': 16.2}
 TX35 = {'model': 'LaCrosse-TX35DTHIT', 'id': 7, 'battery_ok': 0, 'temperature_C': -3.45, 'humidity': 81}
 LTV_TH = {'model': 'LaCrosse-TH3', 'id': 0x2D9C14, 'seq': 1, 'battery_ok': 1, 'temperature_C': 19.4, 'humidity': 58}
-LTV_WIND = {'model': 'LaCrosse-BreezePro', 'id': 0x18AB31, 'wind_avg_km_h': 3.1}
+LTV_WIND = {'model': 'LaCrosse-BreezePro', 'id': 0x89401A, 'seq': 3, 'flags': 0, 'temperature_C': 24.5,
+            'humidity': 44, 'wind_avg_km_h': 9.7, 'wind_dir_deg': 315, 'mic': 'CRC'}
+WIND_ONLY = {'model': 'LaCrosse-WindSensor', 'id': 0x11, 'wind_avg_m_s': 2.5, 'wind_max_m_s': 4.0}
 
 
 class ParseTest(unittest.TestCase):
@@ -48,7 +50,17 @@ class ParseTest(unittest.TestCase):
     def test_lacrosse_view_sensor_by_id(self):
         r = parse_rtl433_line(json.dumps(LTV_TH))
         self.assertEqual((r.source, r.channel, r.temp_c, r.humidity), ('lacrosse', str(0x2D9C14), 19.4, 58))
-        self.assertIsNone(parse_rtl433_line(json.dumps(LTV_WIND)))  # no temperature to show
+
+    def test_breeze_pro_wind_temperature_humidity(self):
+        r = parse_rtl433_line(json.dumps(LTV_WIND))
+        self.assertEqual((r.source, r.channel, r.model, r.temp_c, r.humidity, r.wind_avg_kmh, r.wind_dir_deg),
+                         ('lacrosse', '8994842', 'LaCrosse-BreezePro', 24.5, 44, 9.7, 315))
+
+    def test_wind_only_sensor_in_m_s(self):
+        r = parse_rtl433_line(json.dumps(WIND_ONLY))
+        self.assertEqual((r.temp_c, r.wind_avg_kmh, r.wind_max_kmh), (None, 9.0, 14.4))
+        # ...but a non-La Crosse device with neither is still ignored
+        self.assertIsNone(parse_rtl433_line(json.dumps({'model': 'Meter', 'id': 1, 'wind_avg_km_h': 3})))
 
     def test_ignores_other_lines(self):
         for line in ('', 'not json', '[]',

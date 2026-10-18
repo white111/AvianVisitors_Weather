@@ -81,6 +81,22 @@
     return units === 'C' ? tempC : tempC * 9 / 5 + 32;
   }
 
+  var COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+  // "NW 6 mph" (or km/h with Celsius); gusts are added when the sensor reports them.
+  function windText(sensor, units) {
+    var avg = typeof sensor.wind_avg_kmh === 'number' ? sensor.wind_avg_kmh : null;
+    var max = typeof sensor.wind_max_kmh === 'number' ? sensor.wind_max_kmh : null;
+    if (avg === null && max === null) return '';
+    var factor = units === 'C' ? 1 : 0.621371;
+    var unit = units === 'C' ? ' km/h' : ' mph';
+    var dir = typeof sensor.wind_dir_deg === 'number' ? COMPASS[Math.round(sensor.wind_dir_deg / 22.5) % 16] + ' ' : '';
+    if (avg !== null && avg < 1 && (max === null || max < 1)) return 'calm';
+    var text = dir + Math.round((avg !== null ? avg : max) * factor);
+    if (avg !== null && max !== null && max > avg) text += '\u2013' + Math.round(max * factor);
+    return text + unit;
+  }
+
   var badge = el('aside', 'tp-badge');
   badge.id = 'tpBadge';
   badge.setAttribute('aria-label', 'Weather');
@@ -96,7 +112,7 @@
     var fresh = [];
     for (var i = 0; i < list.length; i++) {
       var s = list[i];
-      if (s && typeof s.temp_c === 'number' && s.age_s <= SENSOR_STALE_S) fresh.push(s);
+      if (s && s.age_s <= SENSOR_STALE_S && (typeof s.temp_c === 'number' || windText(s, 'F'))) fresh.push(s);
     }
     return fresh;
   }
@@ -112,8 +128,12 @@
       var sensor = sensors[j];
       var row = el('div', 'tp-row');
       if (sensors.length > 1 || forecastReady()) row.appendChild(el('span', 'tp-label', sensor.label));
-      row.appendChild(el('span', 'tp-temp', Math.round(toUnits(sensor.temp_c, units)) + '°'));
+      if (typeof sensor.temp_c === 'number') {
+        row.appendChild(el('span', 'tp-temp', Math.round(toUnits(sensor.temp_c, units)) + '°'));
+      }
       if (typeof sensor.humidity === 'number') row.appendChild(el('span', 'tp-hum', sensor.humidity + '%'));
+      var wind = windText(sensor, units);
+      if (wind) row.appendChild(el('span', 'tp-wind', wind));
       row.title = sensor.label + ' · updated ' + Math.round(sensor.age_s / 60) + ' min ago';
       wrap.appendChild(row);
     }
@@ -232,5 +252,5 @@
   window.addEventListener('avian:sensors-changed', pollSensors);
 
   // Exposed for tests only.
-  window.__avianWeather = { describe: describe, dayName: dayName, render: render };
+  window.__avianWeather = { describe: describe, dayName: dayName, render: render, windText: windText };
 })();

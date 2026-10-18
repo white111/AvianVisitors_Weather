@@ -142,7 +142,7 @@ def main() -> int:
     changed = threading.Event()
     stop = threading.Event()
 
-    def record(source: str, channel: str, sensor_id: int, temp_c: float, humidity, extra: dict) -> None:
+    def record(source: str, channel: str, sensor_id: int, temp_c, humidity, extra: dict) -> None:
         defaults = {'thermopro': 'Channel ', 'acurite': 'AcuRite ', 'lacrosse': 'La Crosse '}
         entry = {
             'source': source,
@@ -162,12 +162,19 @@ def main() -> int:
             # La Crosse sensors send every few seconds; print changes or once a minute.
             now = time.time()
             previous = last_printed.get(key)
-            if previous is None or previous[1:] != (temp_c, humidity) or now - previous[0] >= 60:
-                last_printed[key] = (now, temp_c, humidity)
+            wind = extra.get('wind_avg_kmh')
+            if previous is None or previous[1:] != (temp_c, humidity, wind) or now - previous[0] >= 60:
+                last_printed[key] = (now, temp_c, humidity, wind)
                 hum = '--' if humidity is None else '%d%%' % humidity
-                print('%s  %-9s ch%s %-10s id=%5d  %5.1f C  %5.1f F  %s' % (
+                temps = ('%5.1f C  %5.1f F' % (temp_c, temp_c * 9 / 5 + 32)) if temp_c is not None else '   -- C     -- F'
+                wind_text = ''
+                if wind is not None:
+                    wind_text = '  wind %.1f km/h' % wind
+                    if extra.get('wind_dir_deg') is not None:
+                        wind_text += ' from %d deg' % extra['wind_dir_deg']
+                print('%s  %-9s ch%s %-10s id=%5d  %s  %s%s' % (
                     time.strftime('%H:%M:%S'), source, channel, entry['label'], sensor_id,
-                    temp_c, temp_c * 9 / 5 + 32, hum), flush=True)
+                    temps, hum, wind_text), flush=True)
         changed.set()
         if args.once:
             stop.set()
@@ -181,9 +188,12 @@ def main() -> int:
                {'battery_ok': reading.battery_ok})
 
     def on_sdr(reading: SensorReading) -> None:
-        extra = {'receiver': 'rtl_433'}
+        extra = {'receiver': 'rtl_433', 'model': reading.model}
         if reading.battery_ok is not None and reading.source != 'thermopro':
             extra['battery_ok'] = reading.battery_ok
+        for field in ('wind_avg_kmh', 'wind_max_kmh', 'wind_dir_deg'):
+            if getattr(reading, field) is not None:
+                extra[field] = getattr(reading, field)
         record(reading.source, reading.channel, reading.sensor_id, reading.temp_c, reading.humidity, extra)
 
     def on_frame(raw: str) -> None:

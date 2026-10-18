@@ -7819,9 +7819,19 @@
     return Math.round(sensor.age_s / 3600) + ' h ago';
   }
   function sensorReadingText(sensor, units) {
-    if (typeof sensor.temp_c !== 'number') return '';
-    var temp = units === 'C' ? sensor.temp_c : sensor.temp_c * 9 / 5 + 32;
-    return Math.round(temp) + '°' + units + (typeof sensor.humidity === 'number' ? ' ' + sensor.humidity + '%' : '');
+    var parts = [];
+    if (typeof sensor.temp_c === 'number') {
+      var temp = units === 'C' ? sensor.temp_c : sensor.temp_c * 9 / 5 + 32;
+      parts.push(Math.round(temp) + '\u00b0' + units + (typeof sensor.humidity === 'number' ? ' ' + sensor.humidity + '%' : ''));
+    }
+    var wind = typeof sensor.wind_avg_kmh === 'number' ? sensor.wind_avg_kmh
+      : (typeof sensor.wind_max_kmh === 'number' ? sensor.wind_max_kmh : null);
+    if (wind !== null) {
+      var speed = units === 'C' ? Math.round(wind) + ' km/h' : Math.round(wind * 0.621371) + ' mph';
+      var from = typeof sensor.wind_dir_deg === 'number' ? ' from ' + sensor.wind_dir_deg + '\u00b0' : '';
+      parts.push('wind ' + speed + from);
+    }
+    return parts.join(', ');
   }
   function sensorChannelText(sensor) {
     // La Crosse IT+ sensors have no channel switch, only an id.

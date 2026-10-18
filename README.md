@@ -176,6 +176,9 @@ Any sensor the receiver hears shows up on its own:
 | ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | channel 1, 2, 3 | ~50 s |
 | AcuRite 592TXR tower (00592TXR, 00592TXRA2) | channel A, B, C | ~16 s |
 | La Crosse 915 MHz: IT+ (TX29-IT, TX35DTH-IT, TX31U-IT) and La Crosse View (LTV-TH, LTV-WR1, ...) | sensor id | a few seconds |
+| La Crosse Breeze Pro (LTV-WSDTH01): temperature, humidity, wind speed and direction | sensor id | a few seconds |
+
+Sensors that report wind show it on the badge, e.g. `NW 6 mph` (km/h when the forecast is set to °C).
 
 **Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Each sensor heard gets a name box (blank uses the default) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`.
 

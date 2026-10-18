@@ -75,6 +75,26 @@ function sensors_source_name(string $source): string {
     return 'ThermoPro TX-2';
 }
 
+// "LaCrosse-BreezePro" -> "La Crosse BreezePro", for Settings.
+function sensors_model_label(string $source, string $model): string {
+    $model = sensors_clean_name($model);
+    if ($source === 'lacrosse' && str_starts_with($model, 'LaCrosse-')) {
+        return 'La Crosse ' . substr($model, strlen('LaCrosse-'));
+    }
+    return sensors_source_name($source);
+}
+
+function sensors_wind(array $sensor): array {
+    $wind = [];
+    foreach (['wind_avg_kmh' => 400, 'wind_max_kmh' => 400] as $field => $max) {
+        $value = $sensor[$field] ?? null;
+        if (is_numeric($value) && $value >= 0 && $value <= $max) $wind[$field] = round((float) $value, 1);
+    }
+    $direction = $sensor['wind_dir_deg'] ?? null;
+    if (is_numeric($direction) && $direction >= 0 && $direction <= 360) $wind['wind_dir_deg'] = ((int) $direction) % 360;
+    return $wind;
+}
+
 function sensors_default_label(string $source, string $channel): string {
     if ($source === 'acurite') return 'AcuRite ' . $channel;
     if ($source === 'lacrosse') return 'La Crosse ' . $channel;
@@ -87,7 +107,10 @@ function sensors_readings(): array {
     $now = time();
     $out = ['units' => (($data['units'] ?? 'F') === 'C') ? 'C' : 'F', 'sensors' => []];
     foreach (array_slice((array) ($data['sensors'] ?? []), 0, SENSORS_MAX) as $sensor) {
-        if (!is_array($sensor) || !is_numeric($sensor['temp_c'] ?? null)) continue;
+        if (!is_array($sensor)) continue;
+        $wind = sensors_wind($sensor);
+        // A reading needs a temperature, or wind for a wind-only sensor.
+        if (!is_numeric($sensor['temp_c'] ?? null) && !isset($wind['wind_avg_kmh']) && !isset($wind['wind_max_kmh'])) continue;
         $source = sensors_source($sensor['source'] ?? '');
         $channel = strtoupper((string) ($sensor['channel'] ?? ''));
         $key = sensors_valid_key($source . '-' . $channel);
@@ -98,10 +121,11 @@ function sensors_readings(): array {
             'source' => $source,
             'channel' => $channel,
             'default_label' => sensors_clean_name($sensor['label'] ?? '') ?: sensors_default_label($source, $channel),
-            'temp_c' => round((float) $sensor['temp_c'], 1),
+            'temp_c' => is_numeric($sensor['temp_c'] ?? null) ? round((float) $sensor['temp_c'], 1) : null,
             'humidity' => is_numeric($humidity) ? (int) $humidity : null,
             'age_s' => max(0, $now - (int) ($sensor['seen'] ?? 0)),
-        ];
+            'model_name' => sensors_model_label($source, (string) ($sensor['model'] ?? '')),
+        ] + $wind;
     }
     return $out;
 }
@@ -150,7 +174,7 @@ function sensors_admin_view(): array {
     $list = [];
     foreach ($readings['sensors'] as $key => $reading) {
         $entry = $settings[$key] ?? ['name' => '', 'hidden' => false];
-        $list[$key] = $reading + $entry + ['model' => sensors_source_name($reading['source']), 'heard' => true];
+        $list[$key] = $reading + $entry + ['model' => $reading['model_name'], 'heard' => true];
     }
     foreach ($settings as $key => $entry) {
         if (isset($list[$key])) continue;
@@ -188,7 +212,7 @@ function sensors_public(): void {
             'temp_c' => $reading['temp_c'],
             'humidity' => $reading['humidity'],
             'age_s' => $reading['age_s'],
-        ];
+        ] + array_intersect_key($reading, ['wind_avg_kmh' => 1, 'wind_max_kmh' => 1, 'wind_dir_deg' => 1]);
     }
     sensors_respond(200, ['ok' => true, 'now' => time(), 'units' => $readings['units'], 'sensors' => $out]);
 }

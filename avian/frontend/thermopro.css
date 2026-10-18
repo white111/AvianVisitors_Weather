@@ -24,6 +24,7 @@
 .tp-label { color: var(--ink-soft, #908576); margin-right: 8px; }
 .tp-temp { font-weight: 600; font-variant-numeric: tabular-nums; }
 .tp-hum { color: var(--ink-soft, #908576); margin-left: 8px; font-variant-numeric: tabular-nums; }
+.tp-wind { color: var(--ink-soft, #908576); margin-left: 8px; font-variant-numeric: tabular-nums; }
 
 /* ---- Forecast ---- */
 .tp-sensors + .tp-forecast {
