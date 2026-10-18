@@ -19,7 +19,9 @@ if [ ! -f "$env_file" ]; then
   echo "Wrote $env_file (GPIO, units and receivers; name sensors in Settings > Weather sensors)."
 fi
 
-# An RTL2832U dongle (R820T/R820T2 tuner) turns on the 915 MHz La Crosse receiver.
+# An RTL2832U dongle (R820T/R820T2 tuner) becomes the 433 MHz receiver: rtl_433
+# hears the AcuRite and ThermoPro far better than the RXB6, and a streaming
+# dongle would deafen the RXB6 anyway, so the RXB6 is switched off (--no-gpio).
 if lsusb 2>/dev/null | grep -qiE '0bda:(2838|2832)'; then
   echo "RTL-SDR dongle found."
   # Linux claims these dongles as TV tuners; release it for rtl_433.
@@ -27,11 +29,11 @@ if lsusb 2>/dev/null | grep -qiE '0bda:(2838|2832)'; then
     sudo modprobe -r dvb_usb_rtl28xxu rtl2832_sdr rtl2832 2>/dev/null || true
   fi
   if ! grep -q -- '--rtl433' "$env_file"; then
-    sudo sed -i 's/^THERMOPRO_ARGS=\(.*\)$/THERMOPRO_ARGS=\1 --rtl433/' "$env_file"
-    echo "Enabled La Crosse IT+ sensors (--rtl433) in $env_file."
+    sudo sed -i 's/^THERMOPRO_ARGS=\(.*\)$/THERMOPRO_ARGS=\1 --rtl433 --no-gpio/' "$env_file"
+    echo "Switched to the RTL-SDR receiver (--rtl433 --no-gpio) in $env_file."
   fi
 else
-  echo "No RTL-SDR dongle plugged in; La Crosse sensors stay off (plug it in and run this again)."
+  echo "No RTL-SDR dongle plugged in; using the RXB6 on GPIO."
 fi
 
 sed -e "s#__USER__#${user}#g" -e "s#__REPO__#${repo}#g" \

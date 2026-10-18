@@ -169,17 +169,19 @@ The collage can show a small weather badge in the corner with your own sensor re
 
 ### Sensors
 
-Two receivers feed the badge, and any sensor they hear shows up on its own:
+Any sensor the receiver hears shows up on its own:
 
-| Sensor | Receiver | Identified by | Sends every |
-| --- | --- | --- | --- |
-| ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | RXB6, 433 MHz | channel 1, 2, 3 | ~50 s |
-| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | RXB6, 433 MHz | channel A, B, C | ~16 s |
-| La Crosse IT+ TX29U / TX29-IT, TX35DTH-IT | RTL-SDR dongle, 915 MHz | sensor id | ~4 s |
+| Sensor | Identified by | Sends every |
+| --- | --- | --- |
+| ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | channel 1, 2, 3 | ~50 s |
+| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | channel A, B, C | ~16 s |
+| La Crosse IT+ TX29-IT, TX35DTH-IT (915 MHz) | sensor id | ~4 s |
 
 **Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Each sensor heard gets a name box (blank uses the default) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`.
 
-**RXB6 wiring** (to the Pi header):
+**Receivers.** An **RTL-SDR dongle** (RTL2832U with an R820T/R820T2 tuner) running `rtl_433` at 433.92 MHz is the preferred receiver: it hears the AcuRite and ThermoPro far better than an RXB6. Plug it into a USB port and run the installer; it installs `rtl_433`, frees the dongle from the TV-tuner driver, and switches the service to it (`--rtl433 --no-gpio`). A streaming dongle deafens an RXB6 nearby, so the two are not run together. One dongle hears one band: `--rtl433-freq 915M` listens for La Crosse IT+ instead of the 433 MHz sensors.
+
+Without a dongle, an **RXB6** on GPIO decodes the ThermoPro and AcuRite itself:
 
 | RXB6 | Pi pin |
 | --- | --- |
@@ -188,8 +190,6 @@ Two receivers feed the badge, and any sensor they hear shows up on its own:
 | DATA | 13 (GPIO27) |
 | ANT | 17.3 cm straight wire |
 
-**RTL-SDR dongle** (RTL2832U with an R820T/R820T2 tuner): plug it into a USB port. A quarter-wave antenna for 915 MHz is about 8.2 cm. The installer installs `rtl_433`, frees the dongle from the TV-tuner driver, and turns on La Crosse sensors when it sees the dongle.
-
 **Install or update** on the Pi after pulling this branch (run it again after every update; it restarts the receiver on the new code):
 
 ```bash
@@ -197,7 +197,7 @@ bash ~/BirdNET-Pi/avian/thermopro/install.sh
 journalctl -fu avian-thermopro     # readings appear as sensors transmit
 ```
 
-Receiver options live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433`. Add `--no-gpio` if there is no RXB6. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --raw --no-write --rtl433`.
+Receiver options live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --no-gpio`. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
 
 Readings older than 15 minutes are hidden.
 
