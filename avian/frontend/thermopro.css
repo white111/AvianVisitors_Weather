@@ -1,5 +1,5 @@
-/* ThermoPro weather badge (thermopro.js). Safari 12 safe: no inset,
-   clamp(), color-mix() or flex gap. */
+/* Weather badge (thermopro.js) and the Settings > Local forecast row.
+   Safari 12 safe: no inset, clamp(), color-mix() or flex gap. */
 .tp-badge {
   position: fixed;
   left: 28px;
@@ -15,6 +15,9 @@
   line-height: 1.35;
   letter-spacing: 0.005em;
   pointer-events: auto;
+  max-width: 340px;
+  max-width: calc(100vw - 56px);
+  box-sizing: border-box;
 }
 .tp-badge[hidden] { display: none; }
 .tp-row { white-space: nowrap; }
@@ -22,10 +25,74 @@
 .tp-temp { font-weight: 600; font-variant-numeric: tabular-nums; }
 .tp-hum { color: var(--ink-soft, #908576); margin-left: 8px; font-variant-numeric: tabular-nums; }
 
+/* ---- Forecast ---- */
+.tp-sensors + .tp-forecast {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(26, 22, 18, 0.08);
+  border-top: 1px solid var(--hairline, rgba(26, 22, 18, 0.08));
+}
+.tp-today {
+  display: -webkit-box;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.tp-today:focus { outline: none; }
+.tp-today:focus-visible { outline: 2px solid var(--ink-soft, #908576); outline-offset: 2px; border-radius: 6px; }
+.tp-icon { width: 18px; height: 18px; display: block; }
+.tp-today .tp-icon { margin-right: 7px; -webkit-flex: 0 0 auto; flex: 0 0 auto; }
+.tp-now { font-weight: 600; margin-right: 7px; font-variant-numeric: tabular-nums; }
+.tp-cond { color: var(--ink-soft, #908576); margin-right: 8px; overflow: hidden; text-overflow: ellipsis; }
+.tp-hilo { font-variant-numeric: tabular-nums; }
+.tp-chevron { margin-left: auto; padding-left: 8px; color: var(--ink-soft, #908576); }
+.tp-chevron-icon { width: 12px; height: 12px; display: block; -webkit-transition: -webkit-transform 200ms ease; transition: transform 200ms ease; }
+.tp-open .tp-chevron-icon { -webkit-transform: rotate(180deg); transform: rotate(180deg); }
+
+.tp-days { padding-top: 6px; white-space: nowrap; }
+/* Percent-width day columns need a definite badge width while open. */
+.tp-badge.tp-open { width: 300px; }
+.tp-days[hidden] { display: none; }
+.tp-day {
+  display: inline-block;
+  vertical-align: top;
+  width: 20%;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+.tp-dname { display: block; color: var(--ink-soft, #908576); font-size: 11px; letter-spacing: 0.02em; }
+.tp-dicon { display: block; margin: 3px 0 2px; }
+.tp-dicon .tp-icon { margin: 0 auto; }
+.tp-dhi { display: block; font-weight: 600; }
+.tp-dlo { display: block; color: var(--ink-soft, #908576); }
+.tp-dpop { display: block; font-size: 10px; color: var(--ink-soft, #908576); }
+.tp-place {
+  margin-top: 5px;
+  font: 9px ui-monospace, Menlo, monospace;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft, #908576);
+  white-space: normal;
+}
+
 /* Admin screens own the whole window. */
 body.admin-on .tp-badge { display: none; }
 
-/* iPad: line up with the bottom view switcher. */
+/* iPad: line up with the bottom view switcher, roomier type. */
 @media (pointer: coarse) and (min-width: 701px) and (max-width: 1366px) {
   .tp-badge {
     left: 20px;
@@ -34,7 +101,12 @@ body.admin-on .tp-badge { display: none; }
     bottom: max(22px, env(safe-area-inset-bottom));
     font-size: 16px;
     padding: 9px 16px;
+    max-width: 380px;
   }
+  .tp-badge.tp-open { width: 340px; }
+  .tp-today { min-height: 36px; }
+  .tp-icon { width: 20px; height: 20px; }
+  .tp-day { font-size: 13px; }
 }
 
 /* Phones: the bottom switcher fills the width, so sit under the top bar. */
@@ -47,5 +119,47 @@ body.admin-on .tp-badge { display: none; }
     font-size: 12px;
     padding: 4px 10px;
     border-radius: 12px;
+    max-width: calc(100vw - 28px);
   }
+  .tp-badge.tp-open { width: 260px; }
+  .tp-icon { width: 15px; height: 15px; }
+  .tp-day { font-size: 11px; }
 }
+
+/* ---- Settings > Local forecast ---- */
+.forecast-control .forecast-place { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forecast-control .forecast-search { margin: 0; }
+.forecast-control .forecast-search input.settings-text { width: 100%; max-width: 300px; justify-self: end; }
+.forecast-control .chip {
+  display: inline-block;
+  border: 0;
+  border-radius: 4px;
+  padding: 7px 10px;
+  margin: 0 6px 6px 0;
+  background: var(--paper-2);
+  color: var(--ink);
+  box-shadow: var(--raised);
+  cursor: pointer;
+  font: 9px/1 ui-monospace, Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: lowercase;
+}
+.forecast-control .forecast-set { margin: 0; }
+.forecast-control .chip:hover { background: var(--paper); }
+.forecast-control .chip:active { box-shadow: var(--recess); }
+.forecast-control .chip:disabled { opacity: 0.5; cursor: default; }
+.forecast-control .chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.forecast-matches { padding: 2px 6px 6px 10px; }
+.forecast-matches[hidden] { display: none; }
+.forecast-matches .hint { margin: 0 0 6px; }
+.forecast-matches .chip { text-transform: none; letter-spacing: 0.02em; }
+.forecast-status {
+  margin: 0;
+  padding: 0 6px 6px 10px;
+  min-height: 11px;
+  font: 9px ui-monospace, Menlo, monospace;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+}
+.forecast-status.err { color: var(--accent); }
+.forecast-control[aria-busy="true"] { cursor: progress; }

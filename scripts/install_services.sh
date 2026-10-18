@@ -42,7 +42,7 @@ install_scripts() {
 }
 
 install_avian_controls() {
-  local source target admin_init_output caddy_gid educator_lock
+  local source target admin_init_output caddy_gid educator_lock forecast_dir
   while read -r source target; do
     [ -f "${my_dir}/scripts/${source}" ] || continue
     install -o root -g root -m 0755 \
@@ -86,6 +86,14 @@ EOF
     && [ "$(stat -c '%u:%g:%a:%h' -- "$educator_lock")" = \
       "0:$caddy_gid:660:1" ] \
     || { echo "Unsafe Educators coordination lock" >&2; return 1; }
+  # Local forecast settings and cache, written by avian/api/forecast.php
+  # (php-fpm runs as caddy).
+  forecast_dir=/var/lib/avian-forecast
+  if [ ! -e "$forecast_dir" ] && [ ! -L "$forecast_dir" ]; then
+    install -d -o caddy -g caddy -m 0750 "$forecast_dir"
+  fi
+  [ -d "$forecast_dir" ] && [ ! -L "$forecast_dir" ] \
+    || { echo "Unsafe forecast state directory" >&2; return 1; }
   # Initialize the verifier and atomically provision the derived rate state
   # before the first managed Caddy render. Runtime readers fail closed while
   # either state is absent, so a clean install must not defer this step.

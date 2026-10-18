@@ -7640,6 +7640,175 @@
       + '</div>';
   }
 
+  // Local forecast: city or ZIP lookup, units and on/off for the collage
+  // weather badge. Saved through forecast.php, separate from birdnet.conf,
+  // so changing it never restarts the BirdNET services.
+  function forecastRow(state) {
+    state = state || {};
+    var place = state.place && state.place.label ? state.place.label : '';
+    var units = state.units === 'C' ? 'C' : 'F';
+    var available = state.ok !== false && state.storage_ok !== false;
+    var details = 'Shows today and the next few days on the collage. Search for a city'
+      + ' (for example San Jose, CA) or a ZIP code. Forecasts come from Open-Meteo;'
+      + ' only the place you choose is sent, and it refreshes every 30 minutes.';
+    var note = available ? '' : (state.hint || 'forecast settings are unavailable on this station');
+    return ''
+      + '<div class="forecast-control" data-forecast-control>'
+      + '  <div class="menu-row">'
+      + '    <div class="access-copy"><span class="label">Local forecast</span>'
+      + settingsInfoMarkup('forecastTip', 'About the local forecast', details)
+      + '      <span class="hint forecast-place" data-forecast-place>' + adminEsc(place || 'no place set') + '</span>'
+      + '    </div>'
+      + '    <button type="button" class="switch" role="switch" data-forecast-toggle'
+      + '      aria-label="Show the local forecast on the collage"'
+      + '      aria-checked="' + (state.enabled ? 'true' : 'false') + '"' + (available && place ? '' : ' disabled') + '></button>'
+      + '  </div>'
+      + '  <form class="menu-row forecast-search" data-forecast-form novalidate>'
+      + '    <input type="text" class="settings-text" data-forecast-query aria-label="City or ZIP code"'
+      + '      placeholder="city or ZIP code" maxlength="80" autocomplete="off" autocapitalize="words" spellcheck="false"'
+      + '      value="' + adminAttr(state.query || '') + '"' + (available ? '' : ' disabled') + '>'
+      + '    <button type="submit" class="chip forecast-set" data-forecast-set' + (available ? '' : ' disabled') + '>set</button>'
+      + '  </form>'
+      + '  <div class="forecast-matches" data-forecast-matches hidden></div>'
+      + '  <div class="menu-row">'
+      + '    <div><span class="label">Forecast units</span></div>'
+      + '    <div class="seg" data-forecast-units><i class="seg-pill" aria-hidden="true"></i>'
+      + '      <button type="button" data-v="F" aria-current="' + (units === 'F' ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>&deg;F</button>'
+      + '      <button type="button" data-v="C" aria-current="' + (units === 'C' ? 'true' : 'false') + '"' + (available ? '' : ' disabled') + '>&deg;C</button>'
+      + '    </div>'
+      + '  </div>'
+      + '  <p class="forecast-status' + (available ? '' : ' err') + '" data-forecast-status role="status" aria-live="polite">' + adminEsc(note) + '</p>'
+      + '</div>';
+  }
+
+  function wireForecastControl(scope, initialState) {
+    var root = scope.querySelector('[data-forecast-control]');
+    if (!root) return;
+    var toggle = root.querySelector('[data-forecast-toggle]');
+    var form = root.querySelector('[data-forecast-form]');
+    var input = root.querySelector('[data-forecast-query]');
+    var setButton = root.querySelector('[data-forecast-set]');
+    var matchesEl = root.querySelector('[data-forecast-matches]');
+    var placeEl = root.querySelector('[data-forecast-place]');
+    var statusEl = root.querySelector('[data-forecast-status]');
+    var unitsSeg = root.querySelector('[data-forecast-units]');
+    var state = initialState || {};
+    var busy = false;
+
+    function setStatus(text, isError) {
+      statusEl.textContent = text || '';
+      statusEl.classList.toggle('err', !!isError);
+    }
+    function notifyBadge() {
+      var event;
+      try { event = new Event('avian:forecast-changed'); } catch (e) {
+        event = document.createEvent('Event');
+        event.initEvent('avian:forecast-changed', false, false);
+      }
+      window.dispatchEvent(event);
+    }
+    function apply(next) {
+      state = next;
+      var place = next.place && next.place.label ? next.place.label : '';
+      placeEl.textContent = place || 'no place set';
+      toggle.setAttribute('aria-checked', next.enabled ? 'true' : 'false');
+      toggle.disabled = !place;
+      unitsSeg.querySelectorAll('button').forEach(function (b) {
+        b.setAttribute('aria-current', b.dataset.v === (next.units === 'C' ? 'C' : 'F') ? 'true' : 'false');
+      });
+      syncPill(unitsSeg);
+      if (document.activeElement !== input) input.value = next.query || '';
+    }
+    function setBusy(on) {
+      busy = on;
+      setButton.disabled = on;
+      root.setAttribute('aria-busy', on ? 'true' : 'false');
+    }
+    function post(body) {
+      if (busy) return Promise.resolve(null);
+      setBusy(true);
+      return adminFetch('./avian/api/forecast.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Avian-Action': '1' },
+        body: JSON.stringify(body),
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (result) {
+          if (!response.ok || !result.ok) {
+            throw new Error(result.hint ? result.error + ' - ' + result.hint : (result.error || 'could not save the forecast'));
+          }
+          return result;
+        });
+      }).then(function (result) {
+        apply(result);
+        notifyBadge();
+        return result;
+      }).catch(function (error) {
+        if (!adminAuthCancelled(error)) setStatus(error && error.message ? error.message : 'could not save the forecast', true);
+        return null;
+      }).then(function (result) {
+        setBusy(false);
+        return result;
+      });
+    }
+    function clearMatches() {
+      matchesEl.innerHTML = '';
+      matchesEl.hidden = true;
+    }
+    function showMatches(list) {
+      clearMatches();
+      if (!list || list.length < 2) return;
+      var label = document.createElement('span');
+      label.className = 'hint';
+      label.textContent = 'not this one? pick:';
+      matchesEl.appendChild(label);
+      list.slice(1).forEach(function (match) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'chip';
+        button.textContent = match.label;
+        button.addEventListener('click', function () {
+          setStatus('switching to ' + match.label + '...');
+          post({ action: 'pick', label: match.label, lat: match.lat, lon: match.lon }).then(function (result) {
+            if (!result) return;
+            clearMatches();
+            setStatus('forecast set for ' + match.label);
+          });
+        });
+        matchesEl.appendChild(button);
+      });
+      matchesEl.hidden = false;
+    }
+
+    form.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var query = input.value.trim();
+      if (!query) { setStatus('enter a city or ZIP code', true); input.focus(); return; }
+      setStatus('looking up ' + query + '...');
+      clearMatches();
+      post({ action: 'set', query: query }).then(function (result) {
+        if (!result) return;
+        setStatus('forecast set for ' + result.place.label);
+        showMatches(result.matches);
+        input.blur();
+      });
+    });
+    toggle.addEventListener('click', function () {
+      var on = toggle.getAttribute('aria-checked') !== 'true';
+      post({ action: 'enabled', enabled: on }).then(function (result) {
+        if (result) setStatus(on ? 'forecast shown on the collage' : 'forecast hidden');
+      });
+    });
+    unitsSeg.querySelectorAll('button').forEach(function (button) {
+      button.addEventListener('click', function () {
+        if (button.getAttribute('aria-current') === 'true') return;
+        var units = button.dataset.v === 'C' ? 'C' : 'F';
+        post({ action: 'units', units: units }).then(function (result) {
+          if (result) setStatus('forecast in °' + units);
+        });
+      });
+    });
+  }
+
   function birdweatherRow(state) {
     state = state || {};
     var available = state.ok !== false;
@@ -8407,7 +8576,7 @@
   }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle])').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle]):not([data-forecast-toggle])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -8427,7 +8596,7 @@
       // the analyzer, and a drag fires input a hundred times.
       sl.addEventListener('change', function () { queueSave(300); });
     });
-    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-birdweather-privacy])').forEach(function (seg) {
+    scope.querySelectorAll('.seg:not([data-theme-seg]):not([data-birdweather-privacy]):not([data-forecast-units])').forEach(function (seg) {
       seg.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
           seg.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-current', x === b ? 'true' : 'false'); });
@@ -8448,7 +8617,7 @@
         else { clearTimeout(autoSaveT); setSaveState(''); }
       });
     });
-    scope.querySelectorAll('input.settings-text').forEach(function (inp) {
+    scope.querySelectorAll('input.settings-text:not([data-forecast-query])').forEach(function (inp) {
       function stage() {
         pending[inp.dataset.key] = inp.value.trim();
       }
@@ -12554,12 +12723,25 @@
           if (adminAuthCancelled(error)) throw error;
           return { ok: false, error: 'archive controls unavailable', failure_kind: 'network' };
         }),
+      adminFetch('./avian/api/forecast.php?action=config', { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) {
+          return r.json().catch(function () { return {}; }).then(function (body) {
+            if (r.ok && body.ok) return body;
+            return { ok: false, hint: body.hint || (r.status === 404
+              ? 'run avian/thermopro/install.sh on the Pi to publish the forecast'
+              : 'forecast settings are unavailable') };
+          });
+        }).catch(function (error) {
+          if (adminAuthCancelled(error)) throw error;
+          return { ok: false, hint: 'forecast settings are unavailable' };
+        }),
     ])
       .then(function (parts) {
         var cfg = parts[0];
         var gen = parts[1] || {};
         var birdweather = parts[2] || { ok: false };
         var archive = parts[3] || { ok: false, failure_kind: 'network' };
+        var forecast = parts[4] || { ok: false };
         var v = cfg.values || {};
         var sec = cfg.secrets || {};
         var security = cfg.security || {};
@@ -12597,6 +12779,7 @@
           + settingsToggle('RESET_AT_MIDNIGHT', 'Reset at midnight', 'keep time windows inside the current day', !!v.RESET_AT_MIDNIGHT)
           + '</section><section>'
           + stationRow(v)
+          + forecastRow(forecast)
           + settingsSecret('GEMINI_API_KEY', 'Gemini API key', 'for drawing birds on demand', sec.GEMINI_API_KEY)
           + settingsSecret('EBIRD_API_KEY', 'eBird API key', 'for regional species filters', sec.EBIRD_API_KEY)
           + '</section><section class="settings-retention">'
@@ -12637,6 +12820,7 @@
         wireSettingsAccessDismissal(adminBody);
         wireBirdweatherControl(adminBody, birdweather);
         wireArchiveControl(adminBody, archive);
+        wireForecastControl(adminBody, forecast);
         wireSettingsInfo(adminBody);
         if (pendingAdminNotice) {
           var noticeTarget = adminBody.querySelector('[data-lan-auth-status]');

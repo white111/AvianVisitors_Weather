@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install the ThermoPro receiver service and publish the collage weather badge.
+# Install the ThermoPro receiver service, prepare the local forecast, and
+# publish the collage weather badge.
 # Run on the Pi from the repo:  bash ~/BirdNET-Pi/avian/thermopro/install.sh
 set -euo pipefail
 
@@ -22,7 +23,12 @@ sed -e "s#__USER__#${user}#g" -e "s#__REPO__#${repo}#g" \
 sudo systemctl daemon-reload
 sudo systemctl enable --now avian-thermopro.service
 
-echo "Publishing the badge files and API endpoint..."
+echo "Preparing local forecast storage..."
+if [ ! -d /var/lib/avian-forecast ]; then
+  sudo install -d -o caddy -g caddy -m 0750 /var/lib/avian-forecast
+fi
+
+echo "Publishing the badge files and API endpoints..."
 sudo "$repo/scripts/link_webroot.sh"
 sudo "$repo/scripts/update_caddyfile.sh"
 
