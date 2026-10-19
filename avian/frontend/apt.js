@@ -2849,6 +2849,16 @@
     return placed;
   }
 
+  // Tell the weather badge (thermopro.js) the birds moved, so a floating
+  // badge can step out of their way. iOS 12 needs createEvent.
+  function notifyWindow(name) {
+    var event;
+    try { event = new Event(name); } catch (e) {
+      event = document.createEvent('Event');
+      event.initEvent(name, false, false);
+    }
+    window.dispatchEvent(event);
+  }
   function finishFrameRender(items, count) {
     if (!DATA || !DATA.recent || DATA.recent.species !== items || !DATA.recent.frame_capture_id) return;
     collage.setAttribute('data-frame-count', count);
@@ -3103,6 +3113,7 @@
     // Stash the placed tiles so the alpha-mask hit-tester (below) can
     // resolve which silhouette the cursor is actually over.
     collagePlaced = placed.filter(function (t) { return t.x > -1000; });
+    notifyWindow('avian:collage-rendered');
 
     // Bloom the birds in from the centre outward, but only when asked
     // (first load, window change, view switch) - never on the silent 30s
@@ -7692,6 +7703,27 @@
       }
     });
   }
+  // Client-side: let the weather badge float in the open space between the
+  // birds instead of sitting in the corner. Read by thermopro.js.
+  function weatherFloatRow() {
+    var on = readLS('avian:weather:float', 'off') === 'on';
+    return ''
+      + '<div class="menu-row">'
+      + '  <div><span class="label">Float weather</span><span class="hint">move the weather badge into open space between the birds</span></div>'
+      + '  <button type="button" class="switch" role="switch" aria-label="Float the weather badge between the birds"'
+      + '    aria-checked="' + (on ? 'true' : 'false') + '" data-weather-float></button>'
+      + '</div>';
+  }
+  function wireWeatherFloat(scope) {
+    var sw = scope.querySelector('[data-weather-float]');
+    if (!sw) return;
+    sw.addEventListener('click', function () {
+      var on = sw.getAttribute('aria-checked') !== 'true';
+      sw.setAttribute('aria-checked', on ? 'true' : 'false');
+      writeLS('avian:weather:float', on ? 'on' : 'off');
+      notifyWindow('avian:weather-float-changed');
+    });
+  }
   function atlasAlwaysAllRow() {
     var on = atlasAlwaysAll();
     return ''
@@ -8901,7 +8933,7 @@
   }
   function wireSettingsControls(scope) {
     scope = scope || document;
-    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle]):not([data-forecast-toggle]):not([data-sensor-show])').forEach(function (sw) {
+    scope.querySelectorAll('.switch:not([data-labels-switch]):not([data-atlas-always-all]):not([data-atlas-classic]):not([data-lan-auth]):not([data-birdweather-toggle]):not([data-birdweather-audio]):not([data-archive-toggle]):not([data-forecast-toggle]):not([data-sensor-show]):not([data-weather-float])').forEach(function (sw) {
       sw.addEventListener('click', function () {
         var on = sw.getAttribute('aria-checked') !== 'true';
         sw.setAttribute('aria-checked', on ? 'true' : 'false');
@@ -13109,6 +13141,7 @@
           + '<section>'
           + themeRow()
           + labelsRow()
+          + weatherFloatRow()
           + atlasAlwaysAllRow()
           + atlasClassicRow()
           + settingsText('SITE_NAME', 'Station name', v.SITE_NAME || 'BirdNET-Pi', 60)
@@ -13200,6 +13233,7 @@
         // settings queue. Loading the handwriting face triggers the second
         // render with its final measured metrics.
         wireLabelsPreference(adminBody);
+        wireWeatherFloat(adminBody);
         // Atlas-only preference: apply immediately without touching the
         // shared time picker or sending a station settings request.
         var atlasAllSwitch = adminBody.querySelector('[data-atlas-always-all]');

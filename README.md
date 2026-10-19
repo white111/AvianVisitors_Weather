@@ -185,7 +185,7 @@ Any of these sensors that the receiver hears shows up on its own. Nothing needs 
 
 The 433 MHz sensors work with either receiver below. The 915 MHz La Crosse sensors need the RTL-SDR dongle.
 
-On the badge, wind shows as `WSW 4 mph` (km/h when the forecast is set to °C), with a gust range when the sensor reports one, and `calm` under 1 km/h. A rain gauge shows `0.12 in today` (mm with °C). Rain is counted from local midnight and kept across receiver restarts and gauge battery changes (`/var/lib/avian-thermopro/rain.json`). Readings older than 15 minutes are hidden.
+On the badge, wind shows as `WSW 4 mph` (km/h when the forecast is set to °C), with a gust range when the sensor reports one, and `calm` under 1 km/h. A rain gauge shows `0.12 in today` (mm with °C). Rain is counted from local midnight and kept across receiver restarts and gauge battery changes (`/var/lib/avian-thermopro/rain.json`). Readings older than 15 minutes are hidden. To move the badge out of its corner, turn on **Settings > Float weather** (per device): it then sits in open space between the birds, steps aside when the collage changes, and drifts to another clear spot every 5 minutes. A tap holds it still for a minute. Phones and the Stats/Atlas views keep the corner.
 
 **Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Every sensor heard is listed with its model, latest reading and age, a name box (blank uses the default name) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`. La Crosse sensors are listed by their id. Some models pick a new id when the batteries are replaced; give the new id the old name, then clear the old id's name to drop it from the list.
 

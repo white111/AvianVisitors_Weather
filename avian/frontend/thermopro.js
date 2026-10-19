@@ -278,11 +278,118 @@
     if (skyRow) badge.appendChild(skyRow);
     badge.classList.toggle('tp-open', hasForecast && open);
     badge.hidden = false;
+    // New content can change the badge's size; make sure it still fits clear.
+    if (floatWanted()) placeFloat(false);
     if (hadFocus) {
       var again = badge.querySelector('.tp-today');
       if (again) again.focus();
     }
   }
+
+  // ---- Floating badge ----
+  // With Settings > Float weather on, the badge leaves its corner and sits in
+  // the open space between the birds: after each collage render it steps
+  // aside if a bird now sits under it, and every few minutes it drifts to
+  // another clear spot (which also spreads wear on an always-on screen).
+  // Phones and the stats/atlas views keep the corner.
+  var FLOAT_KEY = 'avian:weather:float';
+  var FLOAT_DRIFT_MS = 5 * 60000;
+  var FLOAT_STEP = 24;
+  var floatPos = null;       // {x, y} in viewport px while floating
+  var floatTouched = 0;      // last tap on the badge; hold still for a while after
+  function floatWanted() {
+    var on = false;
+    try { on = window.localStorage.getItem(FLOAT_KEY) === 'on'; } catch (e) { on = false; }
+    return on && window.innerWidth > 700;
+  }
+  function visibleRect(node) {
+    if (!node) return null;
+    var r = node.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return null;
+    if (r.right <= 0 || r.left >= window.innerWidth || r.bottom <= 0 || r.top >= window.innerHeight) return null;
+    return r;
+  }
+  function collageShowing() {
+    var r = visibleRect(document.getElementById('collage'));
+    return !!r && r.left > -window.innerWidth / 3 && r.left < window.innerWidth / 3;
+  }
+  // Things the badge must not cover: every bird, the empty-nest picture, the
+  // title and the on-screen controls (with a margin).
+  function obstacles() {
+    var list = [], pad = 10, i, r;
+    var birds = document.querySelectorAll('#collage .gtile, #collage .empty-nest img, #collage .empty-nest .empty');
+    for (i = 0; i < birds.length; i++) {
+      r = visibleRect(birds[i]);
+      if (r) list.push({ l: r.left, t: r.top, r: r.right, b: r.bottom, w: 1 });
+    }
+    var chrome = document.querySelectorAll('.top, .menu-shell, .slider, .static-head h1');
+    for (i = 0; i < chrome.length; i++) {
+      r = visibleRect(chrome[i]);
+      if (r) list.push({ l: r.left - pad, t: r.top - pad, r: r.right + pad, b: r.bottom + pad, w: 50 });
+    }
+    return list;
+  }
+  function overlapScore(x, y, w, h, list) {
+    var score = 0;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      var dx = Math.min(x + w, o.r) - Math.max(x, o.l);
+      var dy = Math.min(y + h, o.b) - Math.max(y, o.t);
+      if (dx > 0 && dy > 0) score += dx * dy * o.w;
+    }
+    return score;
+  }
+  // Best spots for a w x h badge: the least-covered positions on a grid,
+  // keeping a margin from the screen edges.
+  function clearSpots(w, h, list) {
+    var margin = 16, spots = [], best = Infinity;
+    var maxX = window.innerWidth - w - margin, maxY = window.innerHeight - h - margin;
+    for (var y = margin; y <= maxY; y += FLOAT_STEP) {
+      for (var x = margin; x <= maxX; x += FLOAT_STEP) {
+        var s = overlapScore(x, y, w, h, list);
+        if (s < best) best = s;
+        spots.push({ x: x, y: y, s: s });
+      }
+    }
+    var good = [];
+    for (var i = 0; i < spots.length; i++) if (spots[i].s <= best + 1) good.push(spots[i]);
+    return good;
+  }
+  function placeFloat(drift) {
+    if (!floatWanted() || badge.hidden || !collageShowing()) { unfloat(); return; }
+    if (badge.contains(document.activeElement) || Date.now() - floatTouched < 60000) return;
+    var w = badge.offsetWidth, h = badge.offsetHeight;
+    if (!w || !h) return;
+    var list = obstacles();
+    // Stay put while the current spot is still clear, unless it is time to drift.
+    if (floatPos && !drift && overlapScore(floatPos.x, floatPos.y, w, h, list) <= 1
+        && floatPos.x + w <= window.innerWidth && floatPos.y + h <= window.innerHeight) return;
+    var spots = clearSpots(w, h, list);
+    if (!spots.length) { unfloat(); return; }
+    // Drift somewhere noticeably different, not one grid step over.
+    var far = [];
+    for (var i = 0; floatPos && i < spots.length; i++) {
+      if (Math.abs(spots[i].x - floatPos.x) + Math.abs(spots[i].y - floatPos.y) > 160) far.push(spots[i]);
+    }
+    var pool = far.length ? far : spots;
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    floatPos = { x: pick.x, y: pick.y };
+    badge.classList.add('tp-float');
+    badge.style.left = pick.x + 'px';
+    badge.style.top = pick.y + 'px';
+  }
+  function unfloat() {
+    if (!badge.classList.contains('tp-float')) return;
+    floatPos = null;
+    badge.classList.remove('tp-float');
+    badge.style.left = '';
+    badge.style.top = '';
+  }
+  badge.addEventListener('click', function () { floatTouched = Date.now(); });
+  window.addEventListener('avian:collage-rendered', function () { setTimeout(function () { placeFloat(false); }, 50); });
+  window.addEventListener('avian:weather-float-changed', function () { floatPos = null; placeFloat(true); });
+  window.addEventListener('resize', function () { floatPos = null; setTimeout(function () { placeFloat(false); }, 150); });
+  setInterval(function () { placeFloat(true); }, FLOAT_DRIFT_MS);
 
   function getJson(url, done) {
     var xhr = new XMLHttpRequest();
@@ -330,5 +437,5 @@
 
   // Exposed for tests only.
   window.__avianWeather = { describe: describe, dayName: dayName, render: render, windText: windText, rainText: rainText,
-    moonIcon: moonIcon, clockText: clockText };
+    moonIcon: moonIcon, clockText: clockText, placeFloat: placeFloat };
 })();

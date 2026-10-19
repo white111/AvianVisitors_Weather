@@ -223,3 +223,15 @@ body.admin-on .tp-badge { display: none; }
     bottom: calc(86px + env(safe-area-inset-bottom));
   }
 }
+
+/* Settings > Float weather: thermopro.js sets left/top in open space between
+   the birds and glides the badge there. Placed after the corner rules so it
+   wins at every width. */
+.tp-badge.tp-float {
+  bottom: auto;
+  -webkit-transition: left 1.6s ease, top 1.6s ease;
+  transition: left 1.6s ease, top 1.6s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tp-badge.tp-float { -webkit-transition: none; transition: none; }
+}
