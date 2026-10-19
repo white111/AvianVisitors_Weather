@@ -2946,6 +2946,11 @@
         : windowLabel(currentHours, DATA.recent);
       btn.title = (s.com || s.sci) + ' - ' + fmtN(titleN) + ' ' +
         (titleN === 1 ? 'call' : 'calls') + ' ' + titlePeriod;
+      var firstHeard = isFirstHeard(s.sci);
+      if (firstHeard) {
+        btn.className += ' is-first';
+        btn.title += ' - first time heard here';
+      }
       btn.style.left = r.x + 'px';
       btn.style.top = r.y + 'px';
       btn.style.width = r.fullW + 'px';
@@ -2953,6 +2958,8 @@
       // iPad: Safari can treat these absolutely-positioned tiles inside the
       // overflow-hidden stage as offscreen and never load lazy images.
       btn.innerHTML = '<img loading="eager" decoding="async" src="' + img + '" alt="' + escHtml(s.com) + '">';
+      // New to the life list: a small "first heard" pill over the bird.
+      if (firstHeard) btn.insertAdjacentHTML('beforeend', '<span class="gtile-first" aria-hidden="true">\u2605 first heard</span>');
       if (r.labelRows) {
         addLabelInk();
         // One baseline per line of the name, each riding the line the planner
@@ -3333,6 +3340,23 @@
 
   // Map sci -> all-time detection count, populated from lifelist for atlas.
   var speciesTotals = {};
+  // Map sci -> first-ever detection ("YYYY-MM-DD HH:MM:SS", station time),
+  // also from lifelist; the collage highlights birds heard for the first time.
+  var speciesFirstSeen = {};
+  var FIRST_HEARD_MS = 24 * 3600 * 1000;
+
+  // Station timestamps are local time. Parse the parts by hand: iOS 12 Safari
+  // reads "YYYY-MM-DDTHH:MM:SS" as UTC, which would shift the 24 h window.
+  function parseStationStamp(text) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/.exec(text || '');
+    if (!m) return NaN;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime();
+  }
+  // A species first heard within the last day, ever (new to the life list).
+  function isFirstHeard(sci) {
+    var t = parseStationStamp(speciesFirstSeen[sci]);
+    return !isNaN(t) && Date.now() - t < FIRST_HEARD_MS;
+  }
 
   function fetchJson(url) {
     return fetch(url, { cache: 'no-store' })
@@ -3378,7 +3402,11 @@
     (ts.by_hour || []).forEach(function (r) { byHour[+r.hour] = +r.detections; });
     STATS.byHour = byHour;
     speciesTotals = {};
-    (ll.species || []).forEach(function (s) { speciesTotals[s.sci] = +s.n; });
+    speciesFirstSeen = {};
+    (ll.species || []).forEach(function (s) {
+      speciesTotals[s.sci] = +s.n;
+      if (s.first_seen) speciesFirstSeen[s.sci] = s.first_seen;
+    });
   }
 
   // Editorial detection timeline. One evenly-spaced column per species,
