@@ -228,6 +228,22 @@ function avian_admin_session_fingerprint(array $state, string $sessionId): strin
     );
 }
 
+// SameSite for the admin session cookie. Strict everywhere except iOS 12 and
+// older (the 1st-gen iPad Air tops out at iOS 12), whose WebKit did not send
+// SameSite cookies back reliably: the unlock succeeded, the next request
+// arrived without the cookie, and the password was asked for again. Those
+// devices get a cookie without SameSite. Cross-site requests still cannot act
+// as admin there: every change needs the X-Avian-Action header and a JSON
+// body (avian_json_action_decision), which another site cannot send without
+// a CORS preflight this server never approves.
+function avian_admin_cookie_samesite(array $server): string {
+    $agent = (string)($server['HTTP_USER_AGENT'] ?? '');
+    if (preg_match('/\b(?:iPad|iPhone|iPod)\b.*?\bOS (\d+)_\d/', $agent, $m) === 1 && (int)$m[1] <= 12) {
+        return '';
+    }
+    return 'Strict';
+}
+
 function avian_start_admin_session(array $server, bool $requireCookie): bool {
     if (session_status() === PHP_SESSION_ACTIVE) {
         return session_name() === AVIAN_ADMIN_SESSION_NAME;
@@ -257,7 +273,7 @@ function avian_start_admin_session(array $server, bool $requireCookie): bool {
         'domain' => '',
         'secure' => avian_request_is_https($server),
         'httponly' => true,
-        'samesite' => 'Strict',
+        'samesite' => avian_admin_cookie_samesite($server),
     ])) {
         return false;
     }
@@ -285,7 +301,7 @@ function avian_destroy_admin_session(array $server, bool $expireCookie = true): 
             'domain' => '',
             'secure' => avian_request_is_https($server),
             'httponly' => true,
-            'samesite' => 'Strict',
+            'samesite' => avian_admin_cookie_samesite($server),
         ]);
     }
 }

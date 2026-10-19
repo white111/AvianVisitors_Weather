@@ -465,6 +465,13 @@ class LanAdminAuthStaticTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_session_cookie_is_strict_except_on_ios_12(self):
+        source = (ROOT / 'avian' / 'api' / 'admin-auth.php').read_text(encoding='utf-8')
+        self.assertIn("'samesite' => avian_admin_cookie_samesite($server),", source)
+        self.assertNotIn("'samesite' => 'None'", source)
+        self.assertIn("(int)$m[1] <= 12", source)
+        self.assertIn("return 'Strict';", source)
+
     def test_stale_passive_session_does_not_expire_fresh_cookie(self):
         source = self.read("avian/api/admin-auth.php")
         self.assertIn("bool $expireInvalidCookie = false", source)
