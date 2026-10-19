@@ -20,6 +20,15 @@
   box-sizing: border-box;
 }
 .tp-badge[hidden] { display: none; }
+/* Sensor readings get their own, smaller panel in the opposite corner. */
+.tp-sensor-panel {
+  left: auto;
+  right: 28px;
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 14px;
+}
+.tp-sensor-panel .tp-row + .tp-row { margin-top: 1px; }
 .tp-row { white-space: nowrap; }
 .tp-label { color: var(--ink-soft, #908576); margin-right: 8px; }
 .tp-temp { font-weight: 600; font-variant-numeric: tabular-nums; }
@@ -120,6 +129,13 @@ body.admin-on .tp-badge { display: none; }
     max-width: 380px;
   }
   .tp-badge.tp-open { width: 340px; }
+  .tp-sensor-panel {
+    left: auto;
+    right: 20px;
+    right: max(20px, env(safe-area-inset-right));
+    font-size: 14px;
+    padding: 7px 13px;
+  }
   .tp-today { min-height: 36px; }
   .tp-icon { width: 20px; height: 20px; }
   .tp-day { font-size: 13px; }
@@ -138,6 +154,15 @@ body.admin-on .tp-badge { display: none; }
     max-width: calc(100vw - 28px);
   }
   .tp-badge.tp-open { width: 260px; }
+  /* The sensors sit just above the page switcher; the forecast stays under
+     the top bar and the title moves down to make room for it. */
+  .tp-sensor-panel {
+    left: 14px; right: auto; top: auto;
+    bottom: 66px;
+    bottom: calc(66px + env(safe-area-inset-bottom));
+    font-size: 11px; padding: 3px 9px;
+  }
+  html.tp-forecast-shown .static-head { padding-top: 128px; }
   .tp-icon { width: 15px; height: 15px; }
   .tp-day { font-size: 11px; }
 }
@@ -229,6 +254,7 @@ body.admin-on .tp-badge { display: none; }
    wins at every width. */
 .tp-badge.tp-float {
   bottom: auto;
+  right: auto;
   -webkit-transition: left 1.6s ease, top 1.6s ease;
   transition: left 1.6s ease, top 1.6s ease;
 }

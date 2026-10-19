@@ -131,11 +131,20 @@
     return (sensor.rain_today_mm / 25.4).toFixed(2) + ' in today';
   }
 
+  // Two small panels: the forecast with sunrise, sunset and the moon (bottom
+  // left), and your own sensors (bottom right). Each hides when it has
+  // nothing fresh to show.
   var badge = el('aside', 'tp-badge');
   badge.id = 'tpBadge';
-  badge.setAttribute('aria-label', 'Weather');
+  badge.setAttribute('aria-label', 'Forecast');
   badge.hidden = true;
   document.body.appendChild(badge);
+  var sensorBadge = el('aside', 'tp-badge tp-sensor-panel');
+  sensorBadge.id = 'tpSensors';
+  sensorBadge.setAttribute('aria-label', 'Weather sensors');
+  sensorBadge.hidden = true;
+  document.body.appendChild(sensorBadge);
+  var panels = [badge, sensorBadge];
 
   var sensorData = null;
   var forecastData = null;
@@ -161,7 +170,7 @@
     for (var j = 0; j < sensors.length; j++) {
       var sensor = sensors[j];
       var row = el('div', 'tp-row');
-      if (sensors.length > 1 || forecastReady()) row.appendChild(el('span', 'tp-label', sensor.label));
+      row.appendChild(el('span', 'tp-label', sensor.label));
       if (typeof sensor.temp_c === 'number') {
         row.appendChild(el('span', 'tp-temp', Math.round(toUnits(sensor.temp_c, units)) + '°'));
       }
@@ -269,21 +278,33 @@
     var units = hasForecast ? forecastData.units : (sensorData && sensorData.units === 'C' ? 'C' : 'F');
     var hadFocus = document.activeElement && badge.contains(document.activeElement);
 
+    // Sensors panel.
+    while (sensorBadge.firstChild) sensorBadge.removeChild(sensorBadge.firstChild);
+    if (sensors.length) sensorBadge.appendChild(renderSensors(sensors, units));
+    sensorBadge.hidden = !sensors.length;
+
+    // Forecast panel: today (with the current temperature), the 5-day strip
+    // when opened, and the sun and moon line.
     while (badge.firstChild) badge.removeChild(badge.firstChild);
     var skyRow = renderSky(units);
-    if (!sensors.length && !hasForecast && !skyRow) { badge.hidden = true; return; }
-
-    if (sensors.length) badge.appendChild(renderSensors(sensors, units));
-    if (hasForecast) badge.appendChild(renderForecast(!sensors.length));
+    if (hasForecast) badge.appendChild(renderForecast(true));
     if (skyRow) badge.appendChild(skyRow);
     badge.classList.toggle('tp-open', hasForecast && open);
-    badge.hidden = false;
-    // New content can change the badge's size; make sure it still fits clear.
+    badge.hidden = !hasForecast && !skyRow;
+
+    stackOnPhone();
+    // New content can change a panel's size; make sure it still fits clear.
     if (floatWanted()) placeFloat(false);
     if (hadFocus) {
       var again = badge.querySelector('.tp-today');
       if (again) again.focus();
     }
+  }
+
+  // Phones put the forecast panel under the top bar; this class lets the
+  // page title make room for it (see thermopro.css).
+  function stackOnPhone() {
+    document.documentElement.classList.toggle('tp-forecast-shown', !badge.hidden);
   }
 
   // ---- Floating badge ----
@@ -295,8 +316,7 @@
   var FLOAT_KEY = 'avian:weather:float';
   var FLOAT_DRIFT_MS = 5 * 60000;
   var FLOAT_STEP = 24;
-  var floatPos = null;       // {x, y} in viewport px while floating
-  var floatTouched = 0;      // last tap on the badge; hold still for a while after
+  var floatTouched = 0;      // last tap on a panel; hold still for a while after
   function floatWanted() {
     var on = false;
     try { on = window.localStorage.getItem(FLOAT_KEY) === 'on'; } catch (e) { on = false; }
@@ -313,9 +333,9 @@
     var r = visibleRect(document.getElementById('collage'));
     return !!r && r.left > -window.innerWidth / 3 && r.left < window.innerWidth / 3;
   }
-  // Things the badge must not cover: every bird, the empty-nest picture, the
-  // title and the on-screen controls (with a margin).
-  function obstacles() {
+  // Things a panel must not cover: every bird, the empty-nest picture, the
+  // title, the on-screen controls and the other panel (with a margin).
+  function obstacles(panel) {
     var list = [], pad = 10, i, r;
     var birds = document.querySelectorAll('#collage .gtile, #collage .empty-nest img, #collage .empty-nest .empty');
     for (i = 0; i < birds.length; i++) {
@@ -326,6 +346,16 @@
     for (i = 0; i < chrome.length; i++) {
       r = visibleRect(chrome[i]);
       if (r) list.push({ l: r.left - pad, t: r.top - pad, r: r.right + pad, b: r.bottom + pad, w: 50 });
+    }
+    for (i = 0; i < panels.length; i++) {
+      var other = panels[i];
+      if (other === panel || other.hidden) continue;
+      var at = other.__floatPos;
+      if (at) {
+        list.push({ l: at.x - pad, t: at.y - pad, r: at.x + other.offsetWidth + pad, b: at.y + other.offsetHeight + pad, w: 50 });
+      } else if ((r = visibleRect(other))) {
+        list.push({ l: r.left - pad, t: r.top - pad, r: r.right + pad, b: r.bottom + pad, w: 50 });
+      }
     }
     return list;
   }
@@ -339,7 +369,7 @@
     }
     return score;
   }
-  // Best spots for a w x h badge: the least-covered positions on a grid,
+  // Best spots for a w x h panel: the least-covered positions on a grid,
   // keeping a margin from the screen edges.
   function clearSpots(w, h, list) {
     var margin = 16, spots = [], best = Infinity;
@@ -355,40 +385,57 @@
     for (var i = 0; i < spots.length; i++) if (spots[i].s <= best + 1) good.push(spots[i]);
     return good;
   }
-  function placeFloat(drift) {
-    if (!floatWanted() || badge.hidden || !collageShowing()) { unfloat(); return; }
-    if (badge.contains(document.activeElement) || Date.now() - floatTouched < 60000) return;
-    var w = badge.offsetWidth, h = badge.offsetHeight;
+  function placePanel(panel, drift) {
+    if (panel.hidden) { unfloatPanel(panel); return; }
+    if (panel.contains(document.activeElement)) return;
+    var w = panel.offsetWidth, h = panel.offsetHeight;
     if (!w || !h) return;
-    var list = obstacles();
+    var list = obstacles(panel);
+    var at = panel.__floatPos;
     // Stay put while the current spot is still clear, unless it is time to drift.
-    if (floatPos && !drift && overlapScore(floatPos.x, floatPos.y, w, h, list) <= 1
-        && floatPos.x + w <= window.innerWidth && floatPos.y + h <= window.innerHeight) return;
+    if (at && !drift && overlapScore(at.x, at.y, w, h, list) <= 1
+        && at.x + w <= window.innerWidth && at.y + h <= window.innerHeight) return;
     var spots = clearSpots(w, h, list);
-    if (!spots.length) { unfloat(); return; }
+    if (!spots.length) { unfloatPanel(panel); return; }
     // Drift somewhere noticeably different, not one grid step over.
     var far = [];
-    for (var i = 0; floatPos && i < spots.length; i++) {
-      if (Math.abs(spots[i].x - floatPos.x) + Math.abs(spots[i].y - floatPos.y) > 160) far.push(spots[i]);
+    for (var i = 0; at && i < spots.length; i++) {
+      if (Math.abs(spots[i].x - at.x) + Math.abs(spots[i].y - at.y) > 160) far.push(spots[i]);
     }
     var pool = far.length ? far : spots;
     var pick = pool[Math.floor(Math.random() * pool.length)];
-    floatPos = { x: pick.x, y: pick.y };
-    badge.classList.add('tp-float');
-    badge.style.left = pick.x + 'px';
-    badge.style.top = pick.y + 'px';
+    panel.__floatPos = { x: pick.x, y: pick.y };
+    panel.classList.add('tp-float');
+    panel.style.left = pick.x + 'px';
+    panel.style.top = pick.y + 'px';
+  }
+  function placeFloat(drift) {
+    if (!floatWanted() || !collageShowing()) { unfloat(); return; }
+    if (Date.now() - floatTouched < 60000) return;
+    for (var i = 0; i < panels.length; i++) placePanel(panels[i], drift);
+  }
+  function unfloatPanel(panel) {
+    if (!panel.classList.contains('tp-float')) return;
+    panel.__floatPos = null;
+    panel.classList.remove('tp-float');
+    panel.style.left = '';
+    panel.style.top = '';
   }
   function unfloat() {
-    if (!badge.classList.contains('tp-float')) return;
-    floatPos = null;
-    badge.classList.remove('tp-float');
-    badge.style.left = '';
-    badge.style.top = '';
+    for (var i = 0; i < panels.length; i++) unfloatPanel(panels[i]);
+    stackOnPhone();
+  }
+  function forgetSpots() {
+    for (var i = 0; i < panels.length; i++) panels[i].__floatPos = null;
   }
   badge.addEventListener('click', function () { floatTouched = Date.now(); });
+  sensorBadge.addEventListener('click', function () { floatTouched = Date.now(); });
   window.addEventListener('avian:collage-rendered', function () { setTimeout(function () { placeFloat(false); }, 50); });
-  window.addEventListener('avian:weather-float-changed', function () { floatPos = null; placeFloat(true); });
-  window.addEventListener('resize', function () { floatPos = null; setTimeout(function () { placeFloat(false); }, 150); });
+  window.addEventListener('avian:weather-float-changed', function () { forgetSpots(); placeFloat(true); });
+  window.addEventListener('resize', function () {
+    forgetSpots();
+    setTimeout(function () { stackOnPhone(); placeFloat(false); }, 150);
+  });
   setInterval(function () { placeFloat(true); }, FLOAT_DRIFT_MS);
 
   function getJson(url, done) {
