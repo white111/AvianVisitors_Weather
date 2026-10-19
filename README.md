@@ -263,6 +263,45 @@ An optional e-ink frame puts the bird collage on a panel by your window. Build i
 
 ---
 
+## AI-assisted modifications
+
+Much of this fork's own code (beyond upstream AvianVisitors) was written with an AI coding assistant, Anthropic's Claude, working from the owner's requests and test results from the real station. The owner reviewed, pushed and installed every change. Those commits carry a `Co-Authored-By: Claude` trailer; list them with:
+
+```bash
+git log --oneline --grep='Co-Authored-By: Claude'
+```
+
+The weather receiver itself started with a commit made without that trailer ("Adding a temp", plus the lgpio working-directory fix), but it came from the same AI-assisted work.
+
+**What was written with AI help:**
+
+- **Weather badge:**
+  - The receiver service (`avian/thermopro/`): ThermoPro TX-2 and AcuRite 592TXR decoders for the RXB6, the RTL-SDR/`rtl_433` source with band switching, wind and rain handling, and the installer.
+  - The sensor API and Settings controls (`avian/api/thermopro.php`, the Weather sensors rows in `apt.js`).
+  - The local forecast (`avian/api/forecast.php`, `avian/frontend/thermopro.*`).
+- **Collage:** the "first heard" highlight for new species.
+- **iPad:** 1st-gen iPad Air (iOS 12) support and the iPad layout and touch fixes.
+- **Fixes:**
+  - The OpenStreetMap Referer fix for the Station location map.
+  - Pointing installers and docs at this fork.
+- **Docs:** these README sections. `CLAUDE.md` and `CLAUDE_HANDOFF.md` are notes for the assistant about the repo and the station; they are not needed to run anything.
+
+**How it was checked:**
+
+- Each change came with unit tests (`tests/test_thermopro_decode.py`, `test_acurite_decode.py`, `test_rtl433_source.py`, `test_rain_today.py`, `test_sensors_api.py`, `test_forecast_api.py`).
+- The radio decoders were confirmed against live sensors on the station: a ThermoPro TX-2, an AcuRite 592TXR and a La Crosse Breeze Pro.
+
+**Limits to keep in mind:**
+
+- Sensors marked "decoder included" in the sensor table rely on `rtl_433`'s decoders and have not been heard on this station.
+- The rain gauge support has only been tested with sample data, since no gauge was installed yet.
+- The assistant could not reach the Pi or GitHub directly. It worked on a local checkout, and the owner ran every on-device step.
+- AI-written code can be confidently wrong. If something misbehaves, the journal (`journalctl -u avian-thermopro`) and the tests are the first places to look, and issues are welcome.
+
+Bird illustrations are a separate, upstream use of AI: restyling them, and drawing art for a newly heard species, uses Google's Gemini image model (see *Restyle the illustrations* above).
+
+---
+
 ## License
 
 CC-BY-NC-SA-4.0, inherited from [BirdNET-Pi](https://github.com/Nachtzuster/BirdNET-Pi/blob/main/LICENSE). Non-commercial use only. See the [BirdNET-Pi README](https://github.com/Nachtzuster/BirdNET-Pi/blob/main/README.md) for full Cornell attribution.
