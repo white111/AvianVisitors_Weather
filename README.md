@@ -116,7 +116,7 @@ If the installed refresher itself is missing or unsafe, use the verified setup c
 
 ## iPad display (including 1st-gen iPad Air)
 
-Open `http://pibird.local/` in Safari on the iPad and use **Share → Add to Home Screen** for a full-screen wall display. On touch screens, tap a bird once to see its name and tap it again to open its postcard. A postcard closes itself after 30 seconds without a touch, and a quiet **1H** window switches to **12H** until a bird is heard again.
+Open `http://pibird.local/` in Safari on the iPad and use **Share → Add to Home Screen** for a full-screen wall display. On touch screens, tap a bird once to see its name and tap it again to open its postcard. A postcard closes itself after 30 seconds without a touch, and a quiet **1H** window switches to **12H** until a bird is heard again. A species heard for the first time ever gets a gold glow and a **first heard** label for its first 24 hours.
 
 The 1st-gen iPad Air tops out at iOS 12 (Safari 12), which cannot read much of the modern CSS and a few of the browser APIs the collage uses. That browser automatically gets:
 
@@ -165,27 +165,37 @@ See [`avian/forwarding/`](avian/forwarding/) for three independent recipes:
 
 ## Weather badge: sensors and local forecast (optional)
 
-The collage can show a small weather badge in the corner with your own sensor readings and a local 5-day forecast. Tap the badge to expand the forecast.
+The collage can show a small weather badge in the corner with your own sensor readings (temperature, humidity, wind and rain) and a local 5-day forecast. Tap the badge to expand the forecast.
 
-### Sensors
+### Supported sensors
 
-Any sensor the receiver hears shows up on its own:
+Any of these sensors that the receiver hears shows up on its own. Nothing needs to be paired.
 
-| Sensor | Identified by | Sends every |
-| --- | --- | --- |
-| ThermoPro TX-2 (TP-60S, TP-62, TP-65 bases) | channel 1, 2, 3 | ~50 s |
-| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | channel A, B, C | ~16 s |
-| La Crosse 915 MHz: IT+ (TX29-IT, TX35DTH-IT, TX31U-IT) and La Crosse View (LTV-TH, LTV-WR1, ...) | sensor id | a few seconds |
-| La Crosse Breeze Pro (LTV-WSDTH01): temperature, humidity, wind speed and direction | sensor id | a few seconds |
-| La Crosse rain gauge (LTV-R1 / LTV-R3): rainfall | sensor id | a few minutes |
+| Sensor | Band | Reports | Identified by | Sends every | Status |
+| --- | --- | --- | --- | --- | --- |
+| ThermoPro TX-2 (sold with TP-60S, TP-62, TP-65 bases) | 433 MHz | temperature, humidity | channel 1, 2, 3 | ~50 s | tested |
+| AcuRite 592TXR tower (00592TXR, 00592TXRA2) | 433 MHz | temperature, humidity | channel A, B, C | ~16 s | tested |
+| La Crosse Breeze Pro (LTV-WSDTH01/04) | 915 MHz | temperature, humidity, wind speed and direction | sensor id | ~30 s | tested |
+| La Crosse View LTV-TH | 915 MHz | temperature, humidity | sensor id | under a minute | decoder included |
+| La Crosse View LTV-WR1 | 915 MHz | wind, rain | sensor id | under a minute | decoder included |
+| La Crosse rain gauge LTV-R1, LTV-R3 | 915 MHz | rain (shown as rain today) | sensor id | a few minutes | decoder included |
+| La Crosse IT+ TX29-IT / TX29U, TX35DTH-IT, TX31U-IT | 915 MHz | temperature (TX35 adds humidity) | sensor id | ~4 s | decoder included; a TX29U was not heard in testing |
 
-Sensors that report wind show it on the badge, e.g. `NW 6 mph` (km/h when the forecast is set to °C). A rain gauge shows today's rain, e.g. `0.12 in today`, counted from local midnight.
+The 433 MHz sensors work with either receiver below. The 915 MHz La Crosse sensors need the RTL-SDR dongle.
 
-**Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Each sensor heard gets a name box (blank uses the default) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`.
+On the badge, wind shows as `WSW 4 mph` (km/h when the forecast is set to °C), with a gust range when the sensor reports one, and `calm` under 1 km/h. A rain gauge shows `0.12 in today` (mm with °C). Rain is counted from local midnight and kept across receiver restarts and gauge battery changes (`/var/lib/avian-thermopro/rain.json`). Readings older than 15 minutes are hidden.
 
-**Receivers.** An **RTL-SDR dongle** (RTL2832U with an R820T/R820T2 tuner) running `rtl_433` at 433.92 MHz is the preferred receiver: it hears the AcuRite and ThermoPro far better than an RXB6. Plug it into a USB port and run the installer; it installs `rtl_433`, frees the dongle from the TV-tuner driver, and switches the service to it (`--rtl433 --no-gpio`). A streaming dongle deafens an RXB6 nearby, so the two are not run together. One dongle hears one band at a time, so with `--rtl433-freq 433.92M --rtl433-freq 915M` (what the installer sets) it takes turns between them, restarting `rtl_433` on each band for 60 s (`--rtl433-hop`); rtl_433's own hopping stopped decoding after the first retune on an R820T dongle. Every sensor is still heard each cycle; a second dongle would give continuous coverage of both bands.
+**Name or hide sensors** in the pibird menu under **Settings > Weather sensors**. Every sensor heard is listed with its model, latest reading and age, a name box (blank uses the default name) and a switch to show or hide it on the collage. Names are stored in `/var/lib/avian-forecast/sensors.json`. La Crosse sensors are listed by their id. Some models pick a new id when the batteries are replaced; give the new id the old name, then clear the old id's name to drop it from the list.
 
-Without a dongle, an **RXB6** on GPIO decodes the ThermoPro and AcuRite itself:
+### Receivers
+
+**RTL-SDR dongle (recommended).** An RTL2832U dongle with an R820T/R820T2 tuner running [`rtl_433`](https://github.com/merbanan/rtl_433) hears the 433 MHz sensors far better than an RXB6, and it is the only way to hear the 915 MHz La Crosse sensors. One dongle hears one band at a time, so the receiver takes turns: 60 s on 433.92 MHz, then 60 s on 915 MHz (`--rtl433-hop`), restarting `rtl_433` for each band. Every sensor is still heard each cycle; a second dongle would cover both bands continuously.
+
+- Use an antenna cut for the band you care most about (about 17 cm for 433 MHz, 8 cm for 915 MHz); the stock telescopic whip works for both when sensors are within ~30 m.
+- Keep sensors at least a few metres from the dongle. A transmitter right next to it overloads the tuner and decodes worse, not better.
+- A streaming dongle deafens an RXB6 nearby, so the installer turns the RXB6 off (`--no-gpio`) when it finds a dongle.
+
+**RXB6 on GPIO (no dongle).** A 433 MHz RXB6 receiver decodes the ThermoPro and AcuRite itself:
 
 | RXB6 | Pi pin |
 | --- | --- |
@@ -194,16 +204,36 @@ Without a dongle, an **RXB6** on GPIO decodes the ThermoPro and AcuRite itself:
 | DATA | 13 (GPIO27) |
 | ANT | 17.3 cm straight wire |
 
-**Install or update** on the Pi after pulling this branch (run it again after every update; it restarts the receiver on the new code):
+### Install or update
 
-```bash
-bash ~/BirdNET-Pi/avian/thermopro/install.sh
-journalctl -fu avian-thermopro     # readings appear as sensors transmit
+1. Plug the RTL-SDR dongle into the Pi (or wire the RXB6).
+2. Pull this branch and run the installer. Run it again after every update; it restarts the receiver on the new code and refreshes the web server's routes:
+   ```bash
+   cd ~/BirdNET-Pi && git pull
+   bash ~/BirdNET-Pi/avian/thermopro/install.sh
+   ```
+   It installs `rtl-433`, `rtl-sdr` and `python3-lgpio`, frees the dongle from Linux's TV-tuner driver, switches the receiver to the dongle on both bands, installs and restarts the `avian-thermopro` service, and creates the settings folder for the forecast and sensor names.
+3. Watch readings arrive (each sensor appears when it next transmits; give the 915 MHz band a couple of minutes):
+   ```bash
+   journalctl -fu avian-thermopro
+   ```
+   A line like `lacrosse ch8994842 La Crosse 8994842 id=8994842 22.4 C 72.3 F 42% wind 3.9 km/h from 253 deg` means it works.
+4. Name the sensors in **Settings > Weather sensors**, set the forecast place (below), and reload the iPad.
+
+Receiver options live in `/etc/avian/thermopro.env`. The installer writes, for example:
+
+```
+THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --no-gpio --rtl433-freq 433.92M --rtl433-freq 915M
 ```
 
-Receiver options live in `/etc/avian/thermopro.env`, for example `THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --no-gpio --rtl433-freq 433.92M --rtl433-freq 915M`. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
+Use only `--rtl433-freq 433.92M` for 433 MHz sensors alone (no hopping), or only `--rtl433-freq 915M` for La Crosse alone. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
 
-Readings older than 15 minutes are hidden.
+### Troubleshooting
+
+- **`[R82XX] PLL not locked!`** at each band switch is normal for R820T dongles and harmless.
+- **`rtl_433 exited with code 3`** (or `usb_claim_interface error`) repeating: the dongle has stalled or something else holds it. Stop the service, unplug the dongle for 5 seconds, plug it back in, and start the service. Rerun `install.sh` if the TV-tuner driver grabbed it again.
+- **A sensor never appears:** check its batteries and distance, then listen to its band alone, e.g. `sudo systemctl stop avian-thermopro; timeout 120 rtl_433 -f 915M -F kv` (or `-f 433.92M`), and look for its model name. Start the service again afterwards.
+- **Readings show up in the journal but not on the badge:** reload the page, and check the sensor is not hidden in Settings.
 
 ### Local forecast
 
