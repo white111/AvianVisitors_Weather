@@ -24,6 +24,8 @@ LTV_TH = {'model': 'LaCrosse-TH3', 'id': 0x2D9C14, 'seq': 1, 'battery_ok': 1, 't
 LTV_WIND = {'model': 'LaCrosse-BreezePro', 'id': 0x89401A, 'seq': 3, 'flags': 0, 'temperature_C': 24.5,
             'humidity': 44, 'wind_avg_km_h': 9.7, 'wind_dir_deg': 315, 'mic': 'CRC'}
 WIND_ONLY = {'model': 'LaCrosse-WindSensor', 'id': 0x11, 'wind_avg_m_s': 2.5, 'wind_max_m_s': 4.0}
+LTV_R3 = {'model': 'LaCrosse-R3', 'id': 0x3A0B2C, 'battery_ok': 1, 'seq': 5, 'rain_mm': 128.27, 'rain2_mm': 0.0,
+          'mic': 'CRC'}
 
 
 class ParseTest(unittest.TestCase):
@@ -55,6 +57,11 @@ class ParseTest(unittest.TestCase):
         r = parse_rtl433_line(json.dumps(LTV_WIND))
         self.assertEqual((r.source, r.channel, r.model, r.temp_c, r.humidity, r.wind_avg_kmh, r.wind_dir_deg),
                          ('lacrosse', '8994842', 'LaCrosse-BreezePro', 24.5, 44, 9.7, 315))
+
+    def test_ltv_r3_rain_gauge(self):
+        r = parse_rtl433_line(json.dumps(LTV_R3))
+        self.assertEqual((r.source, r.channel, r.model, r.temp_c, r.rain_mm, r.battery_ok),
+                         ('lacrosse', str(0x3A0B2C), 'LaCrosse-R3', None, 128.27, True))
 
     def test_wind_only_sensor_in_m_s(self):
         r = parse_rtl433_line(json.dumps(WIND_ONLY))

@@ -39,6 +39,7 @@ from typing import Dict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from acurite_decode import AcuriteReading, AcuriteTowerDecoder  # noqa: E402
 from rtl433_source import DEFAULT_HOP_S, Rtl433Source, SensorReading, available_protocols, rtl433_commands  # noqa: E402
+from rain_today import RainToday  # noqa: E402
 from tx2_decode import Reading, Tx2Decoder  # noqa: E402
 
 DEFAULT_OUT = '/var/lib/avian-thermopro/latest.json'
@@ -138,6 +139,7 @@ def main() -> int:
     labels = parse_labels(args.label)
     sensors: Dict[str, dict] = {}
     last_printed: Dict[str, tuple] = {}
+    rain_today = RainToday(None if args.no_write else os.path.join(os.path.dirname(args.out) or '.', 'rain.json'))
     lock = threading.Lock()
     changed = threading.Event()
     stop = threading.Event()
@@ -163,8 +165,9 @@ def main() -> int:
             now = time.time()
             previous = last_printed.get(key)
             wind = extra.get('wind_avg_kmh')
-            if previous is None or previous[1:] != (temp_c, humidity, wind) or now - previous[0] >= 60:
-                last_printed[key] = (now, temp_c, humidity, wind)
+            rain = extra.get('rain_today_mm')
+            if previous is None or previous[1:] != (temp_c, humidity, wind, rain) or now - previous[0] >= 60:
+                last_printed[key] = (now, temp_c, humidity, wind, rain)
                 hum = '--' if humidity is None else '%d%%' % humidity
                 temps = ('%5.1f C  %5.1f F' % (temp_c, temp_c * 9 / 5 + 32)) if temp_c is not None else '   -- C     -- F'
                 wind_text = ''
@@ -172,6 +175,8 @@ def main() -> int:
                     wind_text = '  wind %.1f km/h' % wind
                     if extra.get('wind_dir_deg') is not None:
                         wind_text += ' from %d deg' % extra['wind_dir_deg']
+                if rain is not None:
+                    wind_text += '  rain today %.2f mm (total %.2f mm)' % (rain, extra.get('rain_total_mm', 0))
                 print('%s  %-9s ch%s %-10s id=%5d  %s  %s%s' % (
                     time.strftime('%H:%M:%S'), source, channel, entry['label'], sensor_id,
                     temps, hum, wind_text), flush=True)
@@ -194,6 +199,9 @@ def main() -> int:
         for field in ('wind_avg_kmh', 'wind_max_kmh', 'wind_dir_deg'):
             if getattr(reading, field) is not None:
                 extra[field] = getattr(reading, field)
+        if reading.rain_mm is not None:
+            extra['rain_total_mm'] = reading.rain_mm
+            extra['rain_today_mm'] = rain_today.update(reading.source + '-' + reading.channel, reading.rain_mm)
         record(reading.source, reading.channel, reading.sensor_id, reading.temp_c, reading.humidity, extra)
 
     def on_frame(raw: str) -> None:

@@ -92,6 +92,11 @@ function sensors_wind(array $sensor): array {
     }
     $direction = $sensor['wind_dir_deg'] ?? null;
     if (is_numeric($direction) && $direction >= 0 && $direction <= 360) $wind['wind_dir_deg'] = ((int) $direction) % 360;
+    // Rain gauges (La Crosse LTV-R1/R3): rain today and the gauge's running total.
+    foreach (['rain_today_mm' => 2000, 'rain_total_mm' => 1000000] as $field => $max) {
+        $value = $sensor[$field] ?? null;
+        if (is_numeric($value) && $value >= 0 && $value <= $max) $wind[$field] = round((float) $value, 2);
+    }
     return $wind;
 }
 
@@ -109,8 +114,9 @@ function sensors_readings(): array {
     foreach (array_slice((array) ($data['sensors'] ?? []), 0, SENSORS_MAX) as $sensor) {
         if (!is_array($sensor)) continue;
         $wind = sensors_wind($sensor);
-        // A reading needs a temperature, or wind for a wind-only sensor.
-        if (!is_numeric($sensor['temp_c'] ?? null) && !isset($wind['wind_avg_kmh']) && !isset($wind['wind_max_kmh'])) continue;
+        // A reading needs a temperature, or wind or rain for a sensor without one.
+        if (!is_numeric($sensor['temp_c'] ?? null) && !isset($wind['wind_avg_kmh']) && !isset($wind['wind_max_kmh'])
+            && !isset($wind['rain_today_mm'])) continue;
         $source = sensors_source($sensor['source'] ?? '');
         $channel = strtoupper((string) ($sensor['channel'] ?? ''));
         $key = sensors_valid_key($source . '-' . $channel);
@@ -212,7 +218,7 @@ function sensors_public(): void {
             'temp_c' => $reading['temp_c'],
             'humidity' => $reading['humidity'],
             'age_s' => $reading['age_s'],
-        ] + array_intersect_key($reading, ['wind_avg_kmh' => 1, 'wind_max_kmh' => 1, 'wind_dir_deg' => 1]);
+        ] + array_intersect_key($reading, ['wind_avg_kmh' => 1, 'wind_max_kmh' => 1, 'wind_dir_deg' => 1, 'rain_today_mm' => 1]);
     }
     sensors_respond(200, ['ok' => true, 'now' => time(), 'units' => $readings['units'], 'sensors' => $out]);
 }

@@ -118,6 +118,17 @@ class SensorsApiTest(unittest.TestCase):
         view = self.post({'action': 'forget', 'key': 'acurite-C'})
         self.assertNotIn('acurite-C', [s['key'] for s in view['sensors']])
 
+    def test_rain_gauge_without_temperature(self):
+        data = json.loads(self.readings.read_text())
+        data['sensors'].append({'source': 'lacrosse', 'channel': '3803948', 'model': 'LaCrosse-R3', 'temp_c': None,
+                                'rain_today_mm': 2.5, 'rain_total_mm': 128.27, 'seen': int(time.time())})
+        self.readings.write_text(json.dumps(data))
+        row = {s['key']: s for s in self.call('public')['sensors']}['lacrosse-3803948']
+        self.assertEqual((row['temp_c'], row['rain_today_mm']), (None, 2.5))
+        self.assertNotIn('rain_total_mm', row)
+        config = {s['key']: s for s in self.call('config')['sensors']}['lacrosse-3803948']
+        self.assertEqual(config['model_name'], 'La Crosse R3')
+
     def test_rejects_bad_input(self):
         self.assertFalse(self.post({'action': 'name', 'key': 'acurite-Z', 'name': 'x'})['ok'])
         self.assertFalse(self.post({'action': 'name', 'key': '../etc', 'name': 'x'})['ok'])

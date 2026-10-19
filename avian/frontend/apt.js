@@ -7831,6 +7831,10 @@
       var from = typeof sensor.wind_dir_deg === 'number' ? ' from ' + sensor.wind_dir_deg + '\u00b0' : '';
       parts.push('wind ' + speed + from);
     }
+    if (typeof sensor.rain_today_mm === 'number') {
+      parts.push('rain today ' + (units === 'C' ? sensor.rain_today_mm.toFixed(1) + ' mm'
+        : (sensor.rain_today_mm / 25.4).toFixed(2) + ' in'));
+    }
     return parts.join(', ');
   }
   function sensorChannelText(sensor) {

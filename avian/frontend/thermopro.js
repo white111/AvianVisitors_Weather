@@ -97,6 +97,14 @@
     return text + unit;
   }
 
+  // Rain today from a rain gauge: "0.12 in" (or mm with Celsius), "dry" when none.
+  function rainText(sensor, units) {
+    if (typeof sensor.rain_today_mm !== 'number') return '';
+    if (sensor.rain_today_mm <= 0) return 'dry today';
+    if (units === 'C') return sensor.rain_today_mm.toFixed(1) + ' mm today';
+    return (sensor.rain_today_mm / 25.4).toFixed(2) + ' in today';
+  }
+
   var badge = el('aside', 'tp-badge');
   badge.id = 'tpBadge';
   badge.setAttribute('aria-label', 'Weather');
@@ -112,7 +120,7 @@
     var fresh = [];
     for (var i = 0; i < list.length; i++) {
       var s = list[i];
-      if (s && s.age_s <= SENSOR_STALE_S && (typeof s.temp_c === 'number' || windText(s, 'F'))) fresh.push(s);
+      if (s && s.age_s <= SENSOR_STALE_S && (typeof s.temp_c === 'number' || windText(s, 'F') || rainText(s, 'F'))) fresh.push(s);
     }
     return fresh;
   }
@@ -134,6 +142,8 @@
       if (typeof sensor.humidity === 'number') row.appendChild(el('span', 'tp-hum', sensor.humidity + '%'));
       var wind = windText(sensor, units);
       if (wind) row.appendChild(el('span', 'tp-wind', wind));
+      var rain = rainText(sensor, units);
+      if (rain) row.appendChild(el('span', 'tp-wind tp-rain', rain));
       row.title = sensor.label + ' · updated ' + Math.round(sensor.age_s / 60) + ' min ago';
       wrap.appendChild(row);
     }
@@ -252,5 +262,5 @@
   window.addEventListener('avian:sensors-changed', pollSensors);
 
   // Exposed for tests only.
-  window.__avianWeather = { describe: describe, dayName: dayName, render: render, windText: windText };
+  window.__avianWeather = { describe: describe, dayName: dayName, render: render, windText: windText, rainText: rainText };
 })();

@@ -50,6 +50,7 @@ class SensorReading:
     wind_avg_kmh: Optional[float] = None
     wind_max_kmh: Optional[float] = None
     wind_dir_deg: Optional[int] = None
+    rain_mm: Optional[float] = None   # running total; the receiver turns it into rain today
 
 
 def _number(value, low: float, high: float) -> Optional[float]:
@@ -89,9 +90,15 @@ def parse_rtl433_line(line: str) -> Optional[SensorReading]:
     wind_avg = _wind_kmh(data, 'wind_avg')
     wind_max = _wind_kmh(data, 'wind_max')
     direction = _number(data.get('wind_dir_deg'), 0, 360)
+    rain = _number(data.get('rain_mm'), 0, 1000000)
+    if rain is None:
+        rain_in = _number(data.get('rain_in'), 0, 40000)
+        rain = rain_in * 25.4 if rain_in is not None else None
     has_temp = _number(temp_c, -40.0, 70.0) is not None
-    # A wind sensor without a thermometer is still worth showing.
-    if not has_temp and not (model.startswith('LaCrosse-') and (wind_avg is not None or wind_max is not None)):
+    # A La Crosse wind sensor or rain gauge (LTV-R1/R3) has no thermometer but
+    # is still worth showing.
+    if not has_temp and not (model.startswith('LaCrosse-')
+                             and (wind_avg is not None or wind_max is not None or rain is not None)):
         return None
     if model == 'Acurite-Tower':
         source, channel = 'acurite', str(data.get('channel', '')).upper()
@@ -102,8 +109,9 @@ def parse_rtl433_line(line: str) -> Optional[SensorReading]:
         if channel not in ('1', '2', '3'):
             return None
     elif model.startswith('LaCrosse-'):
-        # Any La Crosse model with a temperature or wind: IT+ and La Crosse View
-        # (LTV-TH, Breeze Pro, ...) alike. No channel switch, so the id names them.
+        # Any La Crosse model with a temperature, wind or rain: IT+ and La Crosse
+        # View (LTV-TH, Breeze Pro, LTV-R3 rain gauge, ...) alike. No channel
+        # switch, so the id names them.
         source, channel = 'lacrosse', str(sensor_id)
     else:
         return None
@@ -119,6 +127,7 @@ def parse_rtl433_line(line: str) -> Optional[SensorReading]:
         wind_avg_kmh=wind_avg,
         wind_max_kmh=wind_max,
         wind_dir_deg=int(direction) % 360 if direction is not None else None,
+        rain_mm=round(rain, 2) if rain is not None else None,
     )
 
 
