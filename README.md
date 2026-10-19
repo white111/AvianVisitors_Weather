@@ -118,6 +118,8 @@ If the installed refresher itself is missing or unsafe, use the verified setup c
 
 Open `http://pibird.local/` in Safari on the iPad and use **Share → Add to Home Screen** for a full-screen wall display. On touch screens, tap a bird once to see its name and tap it again to open its postcard. A postcard closes itself after 30 seconds without a touch, and a quiet **1H** window switches to **12H** until a bird is heard again. A species heard for the first time ever gets a gold glow and a **first heard** label for its first 24 hours.
 
+**Theme.** Settings > Theme offers follow system, light, dark and **sunrise / sunset**. The last switches the page to the dark theme at sunset and back to light at sunrise, checked every minute, using the forecast place (or, if none is set, the station location from Settings). Each browser keeps its own theme choice, so pick it on the iPad itself.
+
 The 1st-gen iPad Air tops out at iOS 12 (Safari 12), which cannot read much of the modern CSS and a few of the browser APIs the collage uses. That browser automatically gets:
 
 - `styles.legacy.css`, generated from `styles.css`. Rebuild it whenever `styles.css` changes, for example after syncing upstream:
@@ -234,6 +236,10 @@ Use only `--rtl433-freq 433.92M` for 433 MHz sensors alone (no hopping), or only
 - **`rtl_433 exited with code 3`** (or `usb_claim_interface error`) repeating: the dongle has stalled or something else holds it. Stop the service, unplug the dongle for 5 seconds, plug it back in, and start the service. Rerun `install.sh` if the TV-tuner driver grabbed it again.
 - **A sensor never appears:** check its batteries and distance, then listen to its band alone, e.g. `sudo systemctl stop avian-thermopro; timeout 120 rtl_433 -f 915M -F kv` (or `-f 433.92M`), and look for its model name. Start the service again afterwards.
 - **Readings show up in the journal but not on the badge:** reload the page, and check the sensor is not hidden in Settings.
+
+### Sunrise, sunset and moon phase
+
+Once a location is known, the badge adds a line with today's sunrise and sunset times and the moon's phase, drawn as it looks tonight (for example `7:19 am  6:28 pm  First quarter`; hold or hover over the moon for how much of it is lit). The location is the forecast place, or the station location from Settings when no forecast place is set, rounded to about 1 km. Everything is worked out in the browser; no extra service is used.
 
 ### Local forecast
 

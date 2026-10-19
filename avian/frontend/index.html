@@ -12,8 +12,9 @@
      resolver in apt.js so automatic dark mode never flashes light. -->
 <script>(function(){var d=document.documentElement,q='(prefers-color-scheme: dark)';
 function systemTheme(){try{return window.matchMedia&&window.matchMedia(q).matches?'dark':'light';}catch(e){return'light';}}
-function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
-var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemTheme());})();</script>
+function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark'||v==='sun')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
+function lastSun(){try{var t=localStorage.getItem('avian:theme:sun');return t==='light'||t==='dark'?t:systemTheme();}catch(e){return systemTheme();}}
+var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:(p==='sun'?lastSun():systemTheme()));})();</script>
   <link rel="stylesheet" href="./styles.css?v=r197">
   <link rel="stylesheet" href="./stamps.css?v=r355">
   <link rel="stylesheet" href="./stamp-batch-root.css?v=r254">
@@ -21,14 +22,14 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:systemT
     <link rel="stylesheet" href="./stamp-batch-b.css?v=r319">
   <link rel="stylesheet" href="./stamp-batch-c.css?v=r231">
   <link rel="stylesheet" href="./ipad.css?v=2">
-  <link rel="stylesheet" href="./thermopro.css?v=5">
+  <link rel="stylesheet" href="./thermopro.css?v=6">
 <!-- iPad (iOS 12): Safari 12 drops CSS it cannot parse (inset, clamp(),
      color-mix(), dvh...), which breaks the layout. Browsers without CSS
      `inset` get styles.legacy.css instead, generated from styles.css by
      avian/scripts/legacy_css. -->
 <script>(function(){if(window.CSS&&CSS.supports&&CSS.supports('inset','0'))return;
 var d=document.documentElement;d.className+=(d.className?' ':'')+'legacy-safari';
-var l=document.querySelector('link[href^="./styles.css"]');if(l)l.href='./styles.legacy.css?v=1';})();</script>
+var l=document.querySelector('link[href^="./styles.css"]');if(l)l.href='./styles.legacy.css?v=2';})();</script>
 </head>
 <body>
 <!-- Pill in the top-left slot, only visible on admin overlays
@@ -406,7 +407,7 @@ var l=document.querySelector('link[href^="./styles.css"]');if(l)l.href='./styles
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r235"></script>
-<script src="./apt.js?v=r241"></script>
-<script src="./thermopro.js?v=5"></script>
+<script src="./apt.js?v=r242"></script>
+<script src="./thermopro.js?v=6"></script>
 </body>
 </html>

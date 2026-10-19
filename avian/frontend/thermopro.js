@@ -31,6 +31,32 @@
     storm: '<path d="M4.6 9.3h6.9a2.6 2.6 0 0 0 .3-5.2 3.6 3.6 0 0 0-6.9.9 2.2 2.2 0 0 0-.3 4.3z"/><path d="M8.6 10.2l-1.8 2.4h2.2l-1.6 2.3"/>',
   };
   var CHEVRON = '<path d="M5 6.5L8 9.5l3-3"/>';
+  // Half sun on the horizon with an arrow: up for sunrise, down for sunset.
+  var SUNRISE = '<path d="M1.5 12.5h13M4.6 12.5a3.4 3.4 0 0 1 6.8 0M8 2v4.2M6.2 3.8L8 2l1.8 1.8"/>';
+  var SUNSET = '<path d="M1.5 12.5h13M4.6 12.5a3.4 3.4 0 0 1 6.8 0M8 2v4.2M6.2 4.4L8 6.2l1.8-1.8"/>';
+
+  // The moon as it looks tonight: outline plus the lit part, bounded by the
+  // limb on one side and the terminator (a half-ellipse) on the other.
+  // Waxing is lit on the right, as seen from the northern hemisphere.
+  function moonIcon(phase) {
+    var r = 5.6, cx = 8, top = 8 - r, bottom = 8 + r;
+    var outline = '<circle cx="8" cy="8" r="' + r + '"/>';
+    var lit = (1 - Math.cos(2 * Math.PI * phase)) / 2;
+    if (lit < 0.03) return svg(outline, 'tp-icon tp-moon');
+    if (lit > 0.97) {
+      return svg('<circle cx="8" cy="8" r="' + r + '" fill="currentColor"/>', 'tp-icon tp-moon');
+    }
+    var waxing = phase < 0.5;
+    var rx = (r * Math.abs(Math.cos(2 * Math.PI * phase))).toFixed(2);
+    var gibbous = lit > 0.5;
+    // Limb: top to bottom down the lit side. Terminator: bottom back to top,
+    // bulging toward the lit side for a crescent, away from it for gibbous.
+    var limbSweep = waxing ? 1 : 0;
+    var termSweep = waxing ? (gibbous ? 1 : 0) : (gibbous ? 0 : 1);
+    var d = 'M' + cx + ' ' + top + 'A' + r + ' ' + r + ' 0 0 ' + limbSweep + ' ' + cx + ' ' + bottom
+      + 'A' + rx + ' ' + r + ' 0 0 ' + termSweep + ' ' + cx + ' ' + top + 'Z';
+    return svg(outline + '<path d="' + d + '" fill="currentColor" stroke="none"/>', 'tp-icon tp-moon');
+  }
 
   // WMO weather codes used by Open-Meteo.
   function describe(code, isDay) {
@@ -200,6 +226,43 @@
     return wrap;
   }
 
+  // "6:42 am" with °F, "06:42" with °C.
+  function clockText(ms, units) {
+    var t = new Date(ms), h = t.getHours(), m = t.getMinutes();
+    var mm = (m < 10 ? '0' : '') + m;
+    if (units === 'C') return (h < 10 ? '0' : '') + h + ':' + mm;
+    return ((h + 11) % 12 + 1) + ':' + mm + (h < 12 ? ' am' : ' pm');
+  }
+
+  // Sunrise, sunset and the moon, from the sun/moon maths in apt.js.
+  function renderSky(units) {
+    var sky = window.__avianSky;
+    var where = sky && sky.location();
+    if (!where) return null;
+    var now = Date.now();
+    var row = el('div', 'tp-sky');
+    var times = sky.sunTimes(now, where.lat, where.lon);
+    if (times) {
+      var rise = el('span', 'tp-sun');
+      rise.innerHTML = svg(SUNRISE, 'tp-icon');
+      rise.appendChild(document.createTextNode(clockText(times.rise, units)));
+      rise.title = 'Sunrise';
+      var set = el('span', 'tp-sun');
+      set.innerHTML = svg(SUNSET, 'tp-icon');
+      set.appendChild(document.createTextNode(clockText(times.set, units)));
+      set.title = 'Sunset';
+      row.appendChild(rise);
+      row.appendChild(set);
+    }
+    var moon = sky.moonPhase(now);
+    var moonEl = el('span', 'tp-moonphase');
+    moonEl.innerHTML = moonIcon(moon.phase);
+    moonEl.appendChild(document.createTextNode(moon.name));
+    moonEl.title = moon.name + ' · ' + moon.lit + '% lit';
+    row.appendChild(moonEl);
+    return row;
+  }
+
   function render() {
     var sensors = freshSensors();
     var hasForecast = forecastReady();
@@ -207,10 +270,12 @@
     var hadFocus = document.activeElement && badge.contains(document.activeElement);
 
     while (badge.firstChild) badge.removeChild(badge.firstChild);
-    if (!sensors.length && !hasForecast) { badge.hidden = true; return; }
+    var skyRow = renderSky(units);
+    if (!sensors.length && !hasForecast && !skyRow) { badge.hidden = true; return; }
 
     if (sensors.length) badge.appendChild(renderSensors(sensors, units));
     if (hasForecast) badge.appendChild(renderForecast(!sensors.length));
+    if (skyRow) badge.appendChild(skyRow);
     badge.classList.toggle('tp-open', hasForecast && open);
     badge.hidden = false;
     if (hadFocus) {
@@ -240,6 +305,8 @@
   function pollForecast() {
     getJson(FORECAST_URL, function (status, body) {
       if (body && (status === 200 || status === 503)) {
+        // The forecast place (or station) also sets where sunrise is worked out.
+        if (body.sky && window.__avianSky) window.__avianSky.setLocation(body.sky.lat, body.sky.lon);
         // Keep the last good forecast through a temporary outage.
         if (body.ok || body.enabled === false || !forecastReady()) forecastData = body;
         render();
@@ -262,5 +329,6 @@
   window.addEventListener('avian:sensors-changed', pollSensors);
 
   // Exposed for tests only.
-  window.__avianWeather = { describe: describe, dayName: dayName, render: render, windText: windText, rainText: rainText };
+  window.__avianWeather = { describe: describe, dayName: dayName, render: render, windText: windText, rainText: rainText,
+    moonIcon: moonIcon, clockText: clockText };
 })();

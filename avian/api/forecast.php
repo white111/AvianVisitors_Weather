@@ -313,15 +313,44 @@ function forecast_cached(?array $cache, string $key): ?array {
     return $cache;
 }
 
+// Where the sun and moon are worked out for the badge and the sunrise/sunset
+// theme: the forecast place, else the station's own coordinates from
+// birdnet.conf. Rounded to ~1 km, which is plenty for sunrise times.
+function forecast_station_conf(): string {
+    // CLI-only override keeps tests away from the real station config.
+    if (PHP_SAPI === 'cli') {
+        $override = getenv('AV_BIRDNET_CONF');
+        if (is_string($override) && $override !== '') return $override;
+    }
+    return '/etc/birdnet/birdnet.conf';
+}
+
+function forecast_sky(array $config): ?array {
+    $lat = $config['place']['lat'] ?? null;
+    $lon = $config['place']['lon'] ?? null;
+    if ($lat === null || $lon === null) {
+        $path = forecast_station_conf();
+        $text = is_file($path) && is_readable($path) && filesize($path) < 65536 ? (string) file_get_contents($path) : '';
+        if (preg_match('/^\s*LATITUDE\s*=\s*"?(-?[0-9.]+)"?\s*$/m', $text, $m)) $lat = (float) $m[1];
+        if (preg_match('/^\s*LONGITUDE\s*=\s*"?(-?[0-9.]+)"?\s*$/m', $text, $m)) $lon = (float) $m[1];
+    }
+    $lat = forecast_valid_coord($lat, 90.0);
+    $lon = forecast_valid_coord($lon, 180.0);
+    // 0,0 is BirdNET-Pi's unset default, not a real station.
+    if ($lat === null || $lon === null || ($lat == 0.0 && $lon == 0.0)) return null;
+    return ['lat' => round($lat, 2), 'lon' => round($lon, 2)];
+}
+
 function forecast_public(): void {
     $config = forecast_config();
+    $sky = forecast_sky($config);
     if (!$config['enabled']) {
-        forecast_respond(200, ['ok' => true, 'enabled' => false, 'units' => $config['units']]);
+        forecast_respond(200, ['ok' => true, 'enabled' => false, 'units' => $config['units'], 'sky' => $sky]);
     }
     $place = $config['place'];
     $key = $place['lat'] . ',' . $place['lon'] . ',' . $config['units'];
     $cachePath = forecast_dir() . '/cache.json';
-    $base = ['ok' => true, 'enabled' => true, 'place' => $place['label'], 'units' => $config['units']];
+    $base = ['ok' => true, 'enabled' => true, 'place' => $place['label'], 'units' => $config['units'], 'sky' => $sky];
 
     $cache = forecast_cached(forecast_read_json($cachePath), $key);
     if ($cache && time() - (int) ($cache['fetched'] ?? 0) < FORECAST_TTL) {
@@ -346,7 +375,7 @@ function forecast_public(): void {
     if ($cache) {
         forecast_respond(200, $base + ['updated' => (int) $cache['fetched'], 'stale' => true] + $cache['forecast']);
     }
-    forecast_respond(503, ['ok' => false, 'enabled' => true, 'error' => 'forecast unavailable']);
+    forecast_respond(503, ['ok' => false, 'enabled' => true, 'error' => 'forecast unavailable', 'sky' => $sky]);
 }
 
 function forecast_admin_post(array $body): void {

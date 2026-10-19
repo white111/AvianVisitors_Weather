@@ -953,6 +953,82 @@
   // Store the preference separately from the resolved theme on <html>.
   // New installs default to auto. Existing light and dark choices from the
   // legacy key are both preserved.
+  // ---- Sun and moon ----
+  // Sunrise/sunset (SunCalc's method, accurate to about a minute) and the
+  // moon's phase, worked out in the browser from the sky location that
+  // forecast.php publishes (the forecast place, else the station). Shared
+  // with the weather badge (thermopro.js) through window.__avianSky.
+  var SKY_LOC_KEY = 'avian:sky:loc';
+  var skyLocation = (function () {
+    var parts = String(readLS(SKY_LOC_KEY, '')).split(',');
+    var lat = parseFloat(parts[0]), lon = parseFloat(parts[1]);
+    return isFinite(lat) && isFinite(lon) ? { lat: lat, lon: lon } : null;
+  })();
+  var SKY_RAD = Math.PI / 180;
+  var SKY_DAY_MS = 86400000;
+  var SKY_J1970 = 2440588, SKY_J2000 = 2451545;
+  function skyJulian(ms) { return ms / SKY_DAY_MS - 0.5 + SKY_J1970; }
+  // Sunrise and sunset (ms) for the local calendar day containing `when`, or
+  // null in polar day/night when the sun does not cross the horizon.
+  function sunTimes(when, lat, lon) {
+    var noon = new Date(when);
+    noon.setHours(12, 0, 0, 0);
+    var lw = SKY_RAD * -lon, phi = SKY_RAD * lat;
+    var d = skyJulian(noon.getTime()) - SKY_J2000;
+    var n = Math.round(d - 0.0009 - lw / (2 * Math.PI));
+    var ds = 0.0009 + lw / (2 * Math.PI) + n;
+    var M = SKY_RAD * (357.5291 + 0.98560028 * ds);
+    var C = SKY_RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M));
+    var L = M + C + SKY_RAD * 102.9372 + Math.PI;
+    var dec = Math.asin(Math.sin(SKY_RAD * 23.4397) * Math.sin(L));
+    var jNoon = SKY_J2000 + ds + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+    var cosW = (Math.sin(SKY_RAD * -0.833) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+    if (!(cosW >= -1 && cosW <= 1)) return null;
+    var a = 0.0009 + (Math.acos(cosW) + lw) / (2 * Math.PI) + n;
+    var jSet = SKY_J2000 + a + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+    var toMs = function (j) { return (j + 0.5 - SKY_J1970) * SKY_DAY_MS; };
+    return { rise: toMs(jNoon - (jSet - jNoon)), set: toMs(jSet) };
+  }
+  // Moon phase: 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter.
+  // Mean synodic month from the 2000-01-06 new moon; within about half a day.
+  var MOON_NAMES = ['New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous',
+    'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent'];
+  function moonPhase(when) {
+    var cycles = (skyJulian(+when) - 2451550.26) / 29.530588853;
+    var phase = cycles - Math.floor(cycles);
+    return {
+      phase: phase,
+      lit: Math.round((1 - Math.cos(2 * Math.PI * phase)) / 2 * 100),
+      name: MOON_NAMES[Math.round(phase * 8) % 8],
+    };
+  }
+  function skyIsNight(when) {
+    if (!skyLocation) return null;
+    var times = sunTimes(when, skyLocation.lat, skyLocation.lon);
+    if (!times) {
+      // Polar day or night: summer in that hemisphere means the sun stays up.
+      var month = new Date(when).getMonth();
+      var northSummer = month >= 3 && month <= 8;
+      return (skyLocation.lat >= 0) !== northSummer;
+    }
+    return when < times.rise || when >= times.set;
+  }
+  function setSkyLocation(lat, lon) {
+    lat = +lat; lon = +lon;
+    if (!isFinite(lat) || !isFinite(lon)) return;
+    if (skyLocation && skyLocation.lat === lat && skyLocation.lon === lon) return;
+    skyLocation = { lat: lat, lon: lon };
+    writeLS(SKY_LOC_KEY, lat + ',' + lon);
+    if (themePreference() === 'sun') syncTheme();
+  }
+  window.__avianSky = {
+    sunTimes: sunTimes,
+    moonPhase: moonPhase,
+    isNight: skyIsNight,
+    setLocation: setSkyLocation,
+    location: function () { return skyLocation; },
+  };
+
   var THEME_KEY = 'bird:theme:v2';
   var LEGACY_THEME_KEY = 'bird:theme';
   var THEME_QUERY = '(prefers-color-scheme: dark)';
@@ -960,7 +1036,7 @@
   function themePreference() {
     if (sessionThemePreference) return sessionThemePreference;
     var pref = readLS(THEME_KEY, '');
-    if (pref === 'auto' || pref === 'light' || pref === 'dark') return pref;
+    if (pref === 'auto' || pref === 'light' || pref === 'dark' || pref === 'sun') return pref;
     var legacy = readLS(LEGACY_THEME_KEY, '');
     return (legacy === 'light' || legacy === 'dark') ? legacy : 'auto';
   }
@@ -972,7 +1048,17 @@
     }
   }
   function resolveTheme(pref) {
-    return pref === 'light' || pref === 'dark' ? pref : systemTheme();
+    if (pref === 'light' || pref === 'dark') return pref;
+    if (pref === 'sun') {
+      // Dark from sunset to sunrise; until the location is known, follow the
+      // system. index.html reuses the last answer before first paint.
+      var night = skyIsNight(Date.now());
+      if (night !== null) {
+        writeLS('avian:theme:sun', night ? 'dark' : 'light');
+        return night ? 'dark' : 'light';
+      }
+    }
+    return systemTheme();
   }
   function refreshThemePaint() {
     document.querySelectorAll('.rec-spectro canvas, .bird-card .spectro-wrap canvas').forEach(function (canvas) {
@@ -999,7 +1085,7 @@
     refreshThemePaint();
   }
   function applyTheme(pref) {
-    var next = (pref === 'light' || pref === 'dark') ? pref : 'auto';
+    var next = (pref === 'light' || pref === 'dark' || pref === 'sun') ? pref : 'auto';
     sessionThemePreference = next;
     writeLS(THEME_KEY, next);
     syncTheme();
@@ -1017,6 +1103,15 @@
     if (themeMedia.addEventListener) themeMedia.addEventListener('change', onSystemThemeChange);
     else if (themeMedia.addListener) themeMedia.addListener(onSystemThemeChange);
   }
+  // Sunrise/sunset mode: check once a minute, and when the page comes back
+  // into view, so the wall display flips within a minute of sunrise or sunset.
+  // Only a real change of theme repaints anything.
+  function syncSunTheme() {
+    if (themePreference() !== 'sun') return;
+    if (document.documentElement.getAttribute('data-theme') !== resolveTheme('sun')) syncTheme();
+  }
+  setInterval(syncSunTheme, 60000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) syncSunTheme(); });
   window.addEventListener('storage', function (ev) {
     if (ev.key === THEME_KEY || ev.key === LEGACY_THEME_KEY || ev.key === null) {
       sessionThemePreference = null;
@@ -7552,7 +7647,8 @@
     var icons = {
       auto: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="8.5" rx="1.5"/><path d="M5.25 13.5h5.5M8 11v2.5"/></svg>',
       light: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v1.25M8 13.25v1.25M1.5 8h1.25M13.25 8h1.25M3.4 3.4l.9.9M11.7 11.7l.9.9M12.6 3.4l-.9.9M4.3 11.7l-.9.9"/></svg>',
-      dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.2 10.6A5.5 5.5 0 0 1 5.4 3.8a5.5 5.5 0 1 0 6.8 6.8Z"/></svg>'
+      dark: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.2 10.6A5.5 5.5 0 0 1 5.4 3.8a5.5 5.5 0 1 0 6.8 6.8Z"/></svg>',
+      sun: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 11.5h13M4.5 11.5a3.5 3.5 0 0 1 7 0M8 4.25v1.25M3.2 6.7l.9.9M12.8 6.7l-.9.9M4.5 14h7"/></svg>'
     };
     var btn = function (v, label, tip) {
       var id = 'theme' + v.charAt(0).toUpperCase() + v.slice(1) + 'Tip';
@@ -7563,7 +7659,8 @@
       + '<div class="menu-row">'
       + '  <div><span class="label">Theme</span></div>'
       + '  <div class="seg settings-theme-seg" data-theme-seg role="group" aria-label="Theme"><i class="seg-pill" aria-hidden="true"></i>'
-      + btn('auto', 'Follow system theme', 'follow system') + btn('light', 'Use light theme', 'light') + btn('dark', 'Use dark theme', 'dark') + '</div>'
+      + btn('auto', 'Follow system theme', 'follow system') + btn('light', 'Use light theme', 'light') + btn('dark', 'Use dark theme', 'dark')
+      + btn('sun', 'Light by day, dark after sunset', skyLocation ? 'sunrise / sunset' : 'sunrise / sunset (set a location)') + '</div>'
       + '</div>';
   }
   // Client-side collage-label switch. It applies instantly and remains a

@@ -90,7 +90,8 @@ class ForecastApiTest(unittest.TestCase):
         (self.fixtures / name).write_text(json.dumps(data))
 
     def call(self, *args, state=None):
-        env = dict(os.environ, AV_FORECAST_DIR=str(state or self.state), AV_FORECAST_FIXTURES=str(self.fixtures))
+        env = dict(os.environ, AV_FORECAST_DIR=str(state or self.state), AV_FORECAST_FIXTURES=str(self.fixtures),
+                   AV_BIRDNET_CONF=str(self.tmp / 'birdnet.conf'))
         out = subprocess.run([PHP, str(self.tmp / 'run.php')] + list(args), env=env,
                              capture_output=True, text=True, check=False)
         return json.loads(out.stdout)
@@ -99,7 +100,17 @@ class ForecastApiTest(unittest.TestCase):
         return self.call('post', json.dumps(body), **kw)
 
     def test_disabled_until_configured(self):
-        self.assertEqual(self.call('public'), {'ok': True, 'enabled': False, 'units': 'F'})
+        self.assertEqual(self.call('public'), {'ok': True, 'enabled': False, 'units': 'F', 'sky': None})
+
+    def test_sky_uses_station_location_until_a_place_is_set(self):
+        (self.tmp / 'birdnet.conf').write_text('SITE_NAME="pibird"\nLATITUDE=37.212345\nLONGITUDE="-121.856789"\n')
+        self.assertEqual(self.call('public')['sky'], {'lat': 37.21, 'lon': -121.86})
+        self.post({'action': 'set', 'query': 'San Jose, CA'})
+        self.assertEqual(self.call('public')['sky'], {'lat': 37.34, 'lon': -121.9})
+
+    def test_unset_station_location_gives_no_sky(self):
+        (self.tmp / 'birdnet.conf').write_text('LATITUDE=0\nLONGITUDE=0\n')
+        self.assertIsNone(self.call('public')['sky'])
 
     def test_zip_falls_back_to_zippopotam_and_serves_forecast(self):
         saved = self.post({'action': 'set', 'query': '95120'})

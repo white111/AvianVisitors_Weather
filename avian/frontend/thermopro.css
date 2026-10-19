@@ -90,6 +90,21 @@
   white-space: normal;
 }
 
+/* ---- Sun and moon ---- */
+.tp-sky {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(26, 22, 18, 0.08);
+  border-top: 1px solid var(--hairline, rgba(26, 22, 18, 0.08));
+  white-space: nowrap;
+  color: var(--ink-soft, #908576);
+  font-variant-numeric: tabular-nums;
+}
+.tp-sun, .tp-moonphase { display: inline-block; margin-right: 10px; }
+.tp-moonphase { margin-right: 0; }
+.tp-sky:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+.tp-sky .tp-icon { display: inline-block; width: 15px; height: 15px; vertical-align: -3px; margin-right: 3px; }
+
 /* Admin screens own the whole window. */
 body.admin-on .tp-badge { display: none; }
 
