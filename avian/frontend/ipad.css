@@ -57,3 +57,21 @@ html.legacy-safari #v0 .gcollage {
   height: calc(100vh - 290px);
   min-height: 320px;
 }
+
+/* ---- Title without the station name ----
+   The station name above "Heard Recently" is hidden so the title sits
+   higher and the collage gets the room (the About box is still at /#about).
+   Wide screens lift the title into the top row, between the time picker
+   and the menu; narrower ones put it just under them. Compact (scrolled)
+   views keep their own header rules, which are more specific. */
+.static-head .pre { display: none; }
+@media (min-width: 701px) {
+  .static-head { padding-top: 72px; padding-bottom: 18px; }
+}
+@media (min-width: 960px) {
+  .static-head { padding-top: 24px; }
+}
+html.legacy-safari #v0 .gcollage { height: calc(100vh - 250px); }
+@media (min-width: 960px) {
+  html.legacy-safari #v0 .gcollage { height: calc(100vh - 210px); }
+}

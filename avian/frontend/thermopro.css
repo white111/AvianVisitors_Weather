@@ -96,11 +96,11 @@
   padding-top: 5px;
   border-top: 1px solid rgba(26, 22, 18, 0.08);
   border-top: 1px solid var(--hairline, rgba(26, 22, 18, 0.08));
-  white-space: nowrap;
+  white-space: normal;
   color: var(--ink-soft, #908576);
   font-variant-numeric: tabular-nums;
 }
-.tp-sun, .tp-moonphase { display: inline-block; margin-right: 10px; }
+.tp-sun, .tp-moonphase { display: inline-block; margin-right: 10px; white-space: nowrap; }
 .tp-moonphase { margin-right: 0; }
 .tp-sky:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .tp-sky .tp-icon { display: inline-block; width: 15px; height: 15px; vertical-align: -3px; margin-right: 3px; }
@@ -214,3 +214,12 @@ body.admin-on .tp-badge { display: none; }
   white-space: normal;
 }
 .sensors-status.err { color: var(--accent); }
+
+/* Portrait tablets: the centred page switcher reaches the left edge's
+   territory, so the badge sits just above it instead of beside it. */
+@media (min-width: 701px) and (max-width: 959px) {
+  .tp-badge {
+    bottom: 86px;
+    bottom: calc(86px + env(safe-area-inset-bottom));
+  }
+}
