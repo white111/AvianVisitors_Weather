@@ -72,7 +72,8 @@ class ParseTest(unittest.TestCase):
             self.assertIsNone(parse_rtl433_line(line), line)
 
     def test_command_picks_decoders_by_band(self):
-        self.assertEqual(rtl433_command('433.92M'), ['rtl_433', '-f', '433.92M', '-F', 'json', '-R', '40', '-R', '162'])
+        self.assertEqual(rtl433_command('433.92M'),
+                         ['rtl_433', '-f', '433.92M', '-F', 'json', '-F', 'log', '-R', '40', '-R', '162'])
         cmd = rtl433_command('915M')
         self.assertNotIn('-H', cmd)
         for protocol in ('75', '76', '171', '240'):
@@ -153,6 +154,24 @@ class SourceTest(unittest.TestCase):
         finally:
             for name in scripts:
                 os.unlink(name)
+
+    def test_rtl433_errors_reach_the_log(self):
+        with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fake:
+            fake.write('print("Found Rafael Micro R820T tuner")\nprint("Async read stalled, exiting!")\n'
+                       'import sys\nsys.exit(3)\n')
+        try:
+            logs = []
+            source = Rtl433Source([sys.executable, fake.name], lambda r: None, logs.append)
+            source.start()
+            for _ in range(50):
+                if any('exited with code 3' in m for m in logs):
+                    break
+                threading.Event().wait(0.1)
+            source.stop()
+            self.assertIn('rtl_433: Async read stalled, exiting!', logs)
+            self.assertFalse(any('Rafael' in m for m in logs))
+        finally:
+            os.unlink(fake.name)
 
     def test_missing_binary(self):
         logs = []

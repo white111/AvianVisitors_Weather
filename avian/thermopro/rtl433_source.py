@@ -33,6 +33,9 @@ PROTOCOLS_433 = ['40', '162']   # Acurite-Tower, Thermopro-TX2 (not 3: Prologue 
 PROTOCOLS_915 = ['75', '76', '166', '170', '171', '175', '240']
 DEFAULT_HOP_S = 60
 RESTART_DELAY_S = 15
+# Pause between closing the dongle on one band and opening it on the next, so
+# USB and the tuner settle; reopening at once can leave a cheap dongle stalled.
+SWITCH_PAUSE_S = 2
 
 
 @dataclass(frozen=True)
@@ -141,7 +144,9 @@ def available_protocols(binary: str = 'rtl_433') -> Optional[Set[str]]:
 def rtl433_command(frequency: str, known: Optional[Set[str]] = None,
                    extra: Optional[List[str]] = None) -> List[str]:
     """rtl_433 on one band, at its default sample rate, with that band's decoders."""
-    command = ['rtl_433', '-f', frequency, '-F', 'json']
+    # -F log puts rtl_433's own messages (e.g. "Async read stalled") on stdout
+    # next to the JSON so they reach the journal.
+    command = ['rtl_433', '-f', frequency, '-F', 'json', '-F', 'log']
     for protocol in band_protocols(frequency):
         if known is None or protocol in known:
             command += ['-R', protocol]
@@ -190,6 +195,15 @@ class Rtl433Source:
             except subprocess.TimeoutExpired:
                 process.kill()
 
+    def _relay(self, message: str) -> None:
+        """Pass rtl_433's own messages on, skipping its routine start-up chatter."""
+        routine = ('Use "-F log"', 'New defaults active', 'Found ', 'Exact sample rate', 'Allocating',
+                   'Detached kernel', 'Reattached kernel', 'rtl_433 version', 'Tuned to', 'Sample rate set',
+                   'Bit detection level', 'Tuner gain set', 'Frequency correction', 'Registered', 'Consider',
+                   '[SDR] Using device')
+        if not any(token in message for token in routine):
+            self._log('rtl_433: ' + message[:200])
+
     def _end_window(self) -> None:
         self._window_over.set()
         self._terminate()
@@ -218,6 +232,8 @@ class Rtl433Source:
                 reading = parse_rtl433_line(line)
                 if reading is not None:
                     self._on_reading(reading)
+                elif not line.lstrip().startswith('{') and line.strip():
+                    self._relay(line.strip())
                 if self._stop.is_set():
                     break
             if timer:
@@ -228,6 +244,7 @@ class Rtl433Source:
                 return
             if self._window_over.is_set():
                 index += 1          # this band's turn is over; next band
+                self._stop.wait(SWITCH_PAUSE_S)
                 continue
             self._log('rtl_433 exited with code %s (is the dongle plugged in?); retrying in %d s'
                       % (code, RESTART_DELAY_S))
