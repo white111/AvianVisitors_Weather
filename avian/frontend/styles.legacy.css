@@ -1261,17 +1261,22 @@
     filter: drop-shadow(0 3px 10px rgba(26,22,18,0.26)) saturate(1.1);
   }
   /* First time a species is heard (new to the life list in the last 24 h):
-     a warm glow around the bird and a "first heard" pill above it. Only the
-     pill animates (opacity), which keeps older iPads smooth. */
+     a warm glow around the bird and a "first heard" pill tucked behind it,
+     peeking out above its head. The tile's z-index makes it its own
+     stacking context, so the pill only ever hides behind this bird, never
+     behind a neighbour. Only the pill animates (opacity), which keeps older
+     iPads smooth. */
   .gtile.is-first { z-index: 2; }
+  .gtile.is-first .gtile-label { z-index: 2; }
   .gtile.is-first img {
+    position: relative; z-index: 1;
     filter: drop-shadow(0 0 6px rgba(214,160,40,0.85)) drop-shadow(0 2px 6px rgba(26,22,18,0.12));
   }
   .gtile.is-first.is-hover img {
     filter: drop-shadow(0 0 9px rgba(214,160,40,0.95)) drop-shadow(0 3px 10px rgba(26,22,18,0.26)) saturate(1.1);
   }
   .gtile-first {
-    position: absolute; top: -6px; left: 50%; z-index: 3; transform: translateX(-50%);
+    position: absolute; top: -16px; left: 50%; z-index: 0; transform: translateX(-50%);
     white-space: nowrap;
     font: 700 10px/1 ui-monospace, Menlo, monospace;
     letter-spacing: 0.08em; text-transform: uppercase;

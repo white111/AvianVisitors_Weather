@@ -15,7 +15,7 @@ function systemTheme(){try{return window.matchMedia&&window.matchMedia(q).matche
 function preference(){try{var v=localStorage.getItem('bird:theme:v2');if(v==='auto'||v==='light'||v==='dark'||v==='sun')return v;var old=localStorage.getItem('bird:theme');return old==='light'||old==='dark'?old:'auto';}catch(e){return'auto';}}
 function lastSun(){try{var t=localStorage.getItem('avian:theme:sun');return t==='light'||t==='dark'?t:systemTheme();}catch(e){return systemTheme();}}
 var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:(p==='sun'?lastSun():systemTheme()));})();</script>
-  <link rel="stylesheet" href="./styles.css?v=r197">
+  <link rel="stylesheet" href="./styles.css?v=r198">
   <link rel="stylesheet" href="./stamps.css?v=r355">
   <link rel="stylesheet" href="./stamp-batch-root.css?v=r254">
   <link rel="stylesheet" href="./stamp-batch-a.css?v=r257">
@@ -29,7 +29,7 @@ var p=preference();d.setAttribute('data-theme',p==='light'||p==='dark'?p:(p==='s
      avian/scripts/legacy_css. -->
 <script>(function(){if(window.CSS&&CSS.supports&&CSS.supports('inset','0'))return;
 var d=document.documentElement;d.className+=(d.className?' ':'')+'legacy-safari';
-var l=document.querySelector('link[href^="./styles.css"]');if(l)l.href='./styles.legacy.css?v=2';})();</script>
+var l=document.querySelector('link[href^="./styles.css"]');if(l)l.href='./styles.legacy.css?v=3';})();</script>
 </head>
 <body>
 <!-- Pill in the top-left slot, only visible on admin overlays
