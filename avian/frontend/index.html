@@ -8,6 +8,17 @@
 <meta name="description" content="A live bird collage from your window.">
 <link rel="icon" type="image/png" href="./favicon.png?v=3">
 <link rel="apple-touch-icon" href="./favicon.png?v=3">
+<!-- Installable web app: full screen from the home screen (iOS, including
+     iOS 12) and "Install app" in Chrome/Edge. theme-color follows the page
+     theme; apt.js keeps it in step with the theme setting. -->
+<link rel="manifest" href="./manifest.json?v=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Birds">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="application-name" content="Birds">
+<meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17181c" media="(prefers-color-scheme: dark)">
 <!-- Resolve the saved preference before first paint. This mirrors the
      resolver in apt.js so automatic dark mode never flashes light. -->
 <script>(function(){var d=document.documentElement,q='(prefers-color-scheme: dark)';
@@ -407,7 +418,7 @@ var l=document.querySelector('link[href^="./styles.css"]');if(l)l.href='./styles
 <script src="./stamp-batch-a.js?v=r341"></script>
   <script src="./stamp-batch-b.js?v=r318"></script>
 <script src="./stamp-batch-c.js?v=r235"></script>
-<script src="./apt.js?v=r243"></script>
+<script src="./apt.js?v=r244"></script>
 <script src="./thermopro.js?v=8"></script>
 </body>
 </html>

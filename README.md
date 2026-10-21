@@ -116,7 +116,7 @@ If the installed refresher itself is missing or unsafe, use the verified setup c
 
 ## iPad display (including 1st-gen iPad Air)
 
-Open `http://pibird.local/` in Safari on the iPad and use **Share → Add to Home Screen** for a full-screen wall display. On touch screens, tap a bird once to see its name and tap it again to open its postcard. A postcard closes itself after 30 seconds without a touch, and a quiet **1H** window switches to **12H** until a bird is heard again. A species heard for the first time ever gets a gold glow and a **first heard** label for its first 24 hours.
+Open `http://pibird.local/` in Safari on the iPad and use **Share → Add to Home Screen** for a full-screen wall display. It installs as a web app named **Birds** that opens without Safari's address bar (on Android or desktop Chrome/Edge, use **Install app**). If you added the icon before this, delete it and add it again. The installed app keeps its own settings and admin login, separate from Safari. On touch screens, tap a bird once to see its name and tap it again to open its postcard. A postcard closes itself after 30 seconds without a touch, and a quiet **1H** window switches to **12H** until a bird is heard again. A species heard for the first time ever gets a gold glow and a **first heard** label for its first 24 hours.
 
 **Theme.** Settings > Theme offers follow system, light, dark and **sunrise / sunset**. The last switches the page to the dark theme at sunset and back to light at sunrise, checked every minute, using the forecast place (or, if none is set, the station location from Settings). Each browser keeps its own theme choice, so pick it on the iPad itself.
 

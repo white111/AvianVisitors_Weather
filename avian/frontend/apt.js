@@ -1075,7 +1075,14 @@
   }
   function syncTheme() {
     var pref = themePreference();
-    document.documentElement.setAttribute('data-theme', resolveTheme(pref));
+    var resolvedTheme = resolveTheme(pref);
+    document.documentElement.setAttribute('data-theme', resolvedTheme);
+    // Browser/app chrome colour (Android, desktop installs, newer iOS)
+    // follows the chosen theme, not just the system setting.
+    [].forEach.call(document.querySelectorAll('meta[name="theme-color"]'), function (meta) {
+      meta.removeAttribute('media');
+      meta.setAttribute('content', resolvedTheme === 'dark' ? '#17181c' : '#fcfcfb');
+    });
     document.querySelectorAll('[data-theme-seg]').forEach(function (seg) {
       seg.querySelectorAll('button[data-theme]').forEach(function (button) {
         button.setAttribute('aria-current', button.getAttribute('data-theme') === pref ? 'true' : 'false');
