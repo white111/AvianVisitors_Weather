@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'avian', 'thermopro'))
@@ -158,6 +159,41 @@ class SourceTest(unittest.TestCase):
             self.assertTrue(done.wait(15))
             source.stop()
             self.assertEqual(got[:3], ['acurite', 'lacrosse', 'acurite'])
+        finally:
+            for name in scripts:
+                os.unlink(name)
+
+    def test_moves_on_once_band_sensors_report_then_rests(self):
+        scripts = []
+        for frame in (ACURITE, TX29):
+            with tempfile.NamedTemporaryFile('w', suffix='.py', delete=False) as fake:
+                fake.write('import json, time\nprint(json.dumps(%r), flush=True)\ntime.sleep(60)\n' % frame)
+                scripts.append(fake.name)
+        try:
+            events, done = [], threading.Event()
+            start = time.monotonic()
+
+            def on_reading(reading):
+                events.append((round(time.monotonic() - start, 1), reading.source))
+                if sum(1 for _, source in events if source == 'lacrosse') >= 2:
+                    done.set()
+
+            idle = []
+            source = Rtl433Source([[sys.executable, scripts[0]], [sys.executable, scripts[1]]],
+                                  on_reading, lambda message: None, hop_seconds=10,
+                                  rest_seconds=1, on_idle=idle.append)
+            source._hop_seconds = 3  # keep the test quick
+            source.start()
+            self.assertTrue(done.wait(30))
+            source.stop()
+            # Round 1 knows no sensors yet, so each band gets its full 3 s;
+            # round 2 moves on as soon as the AcuRite and La Crosse report.
+            first_round = events[1][0] - events[0][0]
+            second_round = events[3][0] - events[2][0]
+            self.assertGreaterEqual(first_round, 4.5)   # 3 s window + 2 s switch pause
+            self.assertLess(second_round, 3.5)          # switch pause only
+            # The dongle went idle for the rest between rounds and came back.
+            self.assertEqual(idle[:3], [False, True, False])
         finally:
             for name in scripts:
                 os.unlink(name)

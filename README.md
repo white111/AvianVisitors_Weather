@@ -191,11 +191,11 @@ On the badge, wind shows as `WSW 4 mph` (km/h when the forecast is set to °C), 
 
 ### Receivers
 
-**RTL-SDR dongle (recommended).** An RTL2832U dongle with an R820T/R820T2 tuner running [`rtl_433`](https://github.com/merbanan/rtl_433) hears the 433 MHz sensors far better than an RXB6, and it is the only way to hear the 915 MHz La Crosse sensors. One dongle hears one band at a time, so the receiver takes turns: 60 s on 433.92 MHz, then 60 s on 915 MHz (`--rtl433-hop`), restarting `rtl_433` for each band. Every sensor is still heard each cycle; a second dongle would cover both bands continuously.
+**RTL-SDR dongle (recommended).** An RTL2832U dongle with an R820T/R820T2 tuner running [`rtl_433`](https://github.com/merbanan/rtl_433) hears the 433 MHz sensors far better than an RXB6, and it is the only way to hear the 915 MHz La Crosse sensors. One dongle hears one band at a time, so the receiver works in rounds: it listens on 433.92 MHz until the sensors heard there last time have all reported, then on 915 MHz the same way (at most 90 s per band, `--rtl433-hop`), then switches the dongle off for 60 s (`--rtl433-rest`; 0 listens continuously). Resting keeps the dongle cool, since cheap ones lock up when hot. Every sensor is still heard each round, every 2 to 4 minutes.
 
 - Use an antenna cut for the band you care most about (about 17 cm for 433 MHz, 8 cm for 915 MHz); the stock telescopic whip works for both when sensors are within ~30 m.
 - Keep sensors at least a few metres from the dongle. A transmitter right next to it overloads the tuner and decodes worse, not better.
-- A streaming dongle deafens an RXB6 nearby, so the installer turns the RXB6 off (`--no-gpio`) when it finds a dongle.
+- A streaming dongle deafens an RXB6 nearby, so a wired RXB6 listens only while the dongle rests, or while it is missing or failing, which keeps the ThermoPro and AcuRite coming in. It is optional; use `--no-gpio` to never use it.
 
 **RXB6 on GPIO (no dongle).** A 433 MHz RXB6 receiver decodes the ThermoPro and AcuRite itself:
 
@@ -225,14 +225,15 @@ On the badge, wind shows as `WSW 4 mph` (km/h when the forecast is set to °C), 
 Receiver options live in `/etc/avian/thermopro.env`. The installer writes, for example:
 
 ```
-THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --no-gpio --rtl433-freq 433.92M --rtl433-freq 915M
+THERMOPRO_ARGS=--gpio 27 --units F --print --rtl433 --rtl433-freq 433.92M --rtl433-freq 915M
 ```
 
-Use only `--rtl433-freq 433.92M` for 433 MHz sensors alone (no hopping), or only `--rtl433-freq 915M` for La Crosse alone. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
+Use only `--rtl433-freq 433.92M` for 433 MHz sensors alone, or only `--rtl433-freq 915M` for La Crosse alone. Add `--rtl433-rest 120` for longer rests, or `--rtl433-rest 0` to listen all the time. Restart with `sudo systemctl restart avian-thermopro`. To test by hand, stop the service and run `python3 ~/BirdNET-Pi/avian/thermopro/thermopro_rx.py --print --no-gpio --rtl433 --no-write`.
 
 ### Troubleshooting
 
 - **`[R82XX] PLL not locked!`** at each band switch is normal for R820T dongles and harmless.
+- **`SDR: No supported devices found`** with `dmesg` showing `device descriptor read/64, error -110` or `unable to enumerate USB device`: the dongle has stopped responding on USB. Power the Pi off, let the dongle cool, and try another port. If it keeps happening when cool and on good power (`vcgencmd get_throttled` shows `0x0`), the dongle is failing.
 - **`rtl_433 exited with code 3`** (or `usb_claim_interface error`) repeating: the dongle has stalled or something else holds it. Stop the service, unplug the dongle for 5 seconds, plug it back in, and start the service. Rerun `install.sh` if the TV-tuner driver grabbed it again.
 - **A sensor never appears:** check its batteries and distance, then listen to its band alone, e.g. `sudo systemctl stop avian-thermopro; timeout 120 rtl_433 -f 915M -F kv` (or `-f 433.92M`), and look for its model name. Start the service again afterwards.
 - **Readings show up in the journal but not on the badge:** reload the page, and check the sensor is not hidden in Settings.

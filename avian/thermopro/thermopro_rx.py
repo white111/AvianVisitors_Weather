@@ -38,7 +38,7 @@ from typing import Dict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from acurite_decode import AcuriteReading, AcuriteTowerDecoder  # noqa: E402
-from rtl433_source import DEFAULT_HOP_S, Rtl433Source, SensorReading, available_protocols, rtl433_commands  # noqa: E402
+from rtl433_source import DEFAULT_HOP_S, DEFAULT_REST_S, Rtl433Source, SensorReading, available_protocols, rtl433_commands  # noqa: E402
 from rain_today import RainToday  # noqa: E402
 from tx2_decode import Reading, Tx2Decoder  # noqa: E402
 
@@ -126,14 +126,19 @@ def main() -> int:
     parser.add_argument('--print', dest='echo', action='store_true', help='print each reading')
     parser.add_argument('--raw', action='store_true', help='also print every raw frame')
     parser.add_argument('--once', action='store_true', help='exit after the first reading')
-    parser.add_argument('--no-gpio', action='store_true', help='do not use the RXB6 (RTL-SDR only)')
+    parser.add_argument('--no-gpio', action='store_true', help='never use the RXB6 (RTL-SDR only)')
     parser.add_argument('--rtl433', action='store_true',
-                        help='run rtl_433 on an RTL-SDR dongle (preferred receiver; pair with --no-gpio)')
+                        help='run rtl_433 on an RTL-SDR dongle (preferred receiver). The RXB6, if wired,'
+                             ' listens only while the dongle rests or is missing (a streaming dongle deafens it)')
     parser.add_argument('--rtl433-freq', action='append', metavar='FREQ',
                         help='band(s) for the dongle, repeatable: 433.92M (default) for AcuRite + ThermoPro,'
                              ' 915M for La Crosse; two bands hop')
     parser.add_argument('--rtl433-hop', type=int, default=DEFAULT_HOP_S,
-                        help='seconds on each band when hopping (default %d)' % DEFAULT_HOP_S)
+                        help='longest listen on one band per round; it moves on sooner once every sensor'
+                             ' heard there has reported (default %d)' % DEFAULT_HOP_S)
+    parser.add_argument('--rtl433-rest', type=int, default=DEFAULT_REST_S,
+                        help='seconds the dongle rests (off, cool) after each round; 0 listens'
+                             ' continuously (default %d)' % DEFAULT_REST_S)
     args = parser.parse_args()
 
     labels = parse_labels(args.label)
@@ -217,9 +222,26 @@ def main() -> int:
     if not args.no_gpio:
         lgpio, handle = open_gpio(args.gpio, args.chip, lgpio_workdir(args.out))
     last = {'tick': None}
+    # With the dongle in use, the RXB6 listens only while the dongle is idle:
+    # a streaming dongle drowns it in noise.
+    rxb6_on = threading.Event()
+    if not args.rtl433:
+        rxb6_on.set()
+
+    def on_idle(idle: bool) -> None:
+        last['tick'] = None             # don't join edges across the switch
+        if idle:
+            rxb6_on.set()
+        else:
+            rxb6_on.clear()
+        if args.echo and lgpio:
+            print('%s  RTL-SDR %s' % (time.strftime('%H:%M:%S'),
+                                      'resting; RXB6 listening' if idle else 'listening; RXB6 paused'), flush=True)
 
     def on_edge(_chip, _gpio, level, tick_ns):
         if level not in (0, 1):  # 2 = watchdog timeout
+            return
+        if not rxb6_on.is_set():
             return
         if last['tick'] is not None:
             # The time since the previous edge belongs to the previous level.
@@ -233,7 +255,8 @@ def main() -> int:
     if args.rtl433:
         bands = args.rtl433_freq or ['433.92M']
         sdr = Rtl433Source(rtl433_commands(bands, available_protocols()), on_sdr,
-                           lambda message: print(message, file=sys.stderr, flush=True), args.rtl433_hop)
+                           lambda message: print(message, file=sys.stderr, flush=True), args.rtl433_hop,
+                           args.rtl433_rest, on_idle)
         sdr.start()
 
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
@@ -243,8 +266,9 @@ def main() -> int:
             print('Listening on GPIO%d for ThermoPro TX-2 (~50 s) and AcuRite 592TXR (~16 s) sensors...'
                   % args.gpio, flush=True)
         if sdr:
-            print('Listening with the RTL-SDR at %s%s...' % (
-                ' and '.join(bands), ' (taking turns, %d s each)' % args.rtl433_hop if len(bands) > 1 else ''), flush=True)
+            print('Listening with the RTL-SDR at %s, up to %d s per band, resting %d s between rounds%s...' % (
+                ' and '.join(bands), args.rtl433_hop, args.rtl433_rest,
+                ' (RXB6 listens while it rests)' if lgpio else ''), flush=True)
 
     try:
         while not stop.is_set():

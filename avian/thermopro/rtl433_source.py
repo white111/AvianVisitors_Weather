@@ -8,12 +8,18 @@ preferred receiver when a dongle is plugged in.
 At 915 MHz it hears La Crosse sensors: IT+ (TX29-IT, TX35DTH-IT, TX31U-IT)
 and the La Crosse View line (LTV-TH, LTV-WR1, LTV-R1/W1, Breeze Pro).
 
-One dongle hears one band at a time. Given several bands, this module hops
-between them itself (default 60 s each) by restarting rtl_433 on each band:
-rtl_433's own hopping (-H) stopped decoding after the first retune on the
-station's R820T dongle, while a freshly started single-band rtl_433 decodes
-reliably. 60 s windows still catch every sensor here: the ThermoPro sends every
-~50 s, the AcuRite every ~16 s, La Crosse every few seconds.
+One dongle hears one band at a time. Given several bands, this module takes
+turns itself by restarting rtl_433 on each band: rtl_433's own hopping (-H)
+stopped decoding after the first retune on the station's R820T dongle, while
+a freshly started single-band rtl_433 decodes reliably.
+
+Each round listens on every band in turn, moving on as soon as every sensor
+heard on that band last time has reported again (at most hop_seconds, 90 s by
+default; the ThermoPro sends every ~50 s, the AcuRite every ~16 s, La Crosse
+every ~30 s). Then the dongle rests (rest_seconds, 60 s by default): rtl_433
+is stopped, the tuner goes to standby and runs cool, and the receiver lets the
+RXB6 listen meanwhile. That keeps a cheap dongle that locks up when hot
+working for less of the time.
 
 rtl_433 runs as a child process; its JSON lines become readings for the
 receiver service. Install on the Pi with: sudo apt install rtl-433
@@ -31,7 +37,8 @@ from typing import Callable, List, Optional, Set, Union
 PROTOCOLS_433 = ['40', '162']   # Acurite-Tower, Thermopro-TX2 (not 3: Prologue repeats TX-2 frames)
 # LaCrosse TX35DTH-IT, TX29IT, LTV Breeze Pro, LTV-WR1, LTV-TH, LTV-R1/W1, TX31U-IT
 PROTOCOLS_915 = ['75', '76', '166', '170', '171', '175', '240']
-DEFAULT_HOP_S = 60
+DEFAULT_HOP_S = 90       # longest listen on one band per round
+DEFAULT_REST_S = 60      # dongle off between rounds
 RESTART_DELAY_S = 15
 # Pause between closing the dongle on one band and opening it on the next, so
 # USB and the tuner settle; reopening at once can leave a cheap dongle stalled.
@@ -171,17 +178,29 @@ def rtl433_commands(frequencies: Union[str, List[str]], known: Optional[Set[str]
 
 
 class Rtl433Source:
-    """Runs rtl_433 in a thread. With several band commands it takes turns,
-    hop_seconds on each; a band whose rtl_433 exits on its own is retried."""
+    """Runs rtl_433 in a thread, a round at a time: each band in turn until its
+    sensors have all reported (at most hop_seconds), then rest_seconds with the
+    dongle off. A band whose rtl_433 exits on its own is retried.
+
+    on_idle(True) is called whenever the dongle is not listening (resting,
+    missing or failing) and on_idle(False) just before it listens again, so
+    the receiver can use the RXB6 in between."""
 
     def __init__(self, commands, on_reading: Callable[[SensorReading], None],
-                 log: Callable[[str], None], hop_seconds: int = DEFAULT_HOP_S) -> None:
+                 log: Callable[[str], None], hop_seconds: int = DEFAULT_HOP_S,
+                 rest_seconds: int = 0, on_idle: Optional[Callable[[bool], None]] = None) -> None:
         if commands and isinstance(commands[0], str):
             commands = [commands]
         self._commands: List[List[str]] = [list(c) for c in commands]
         self._on_reading = on_reading
         self._log = log
         self._hop_seconds = max(10, int(hop_seconds))
+        self._rest_seconds = max(0, int(rest_seconds))
+        self._on_idle = on_idle
+        self._idle: Optional[bool] = None
+        # Sensors heard on each band in its last two windows: once they have
+        # all reported again, that band's window ends early.
+        self._recent: List[List[Set[str]]] = [[] for _ in self._commands]
         self._stop = threading.Event()
         self._window_over = threading.Event()
         self._process: Optional[subprocess.Popen] = None
@@ -217,30 +236,57 @@ class Rtl433Source:
         self._window_over.set()
         self._terminate()
 
+    def _set_idle(self, idle: bool) -> None:
+        if idle != self._idle:
+            self._idle = idle
+            if self._on_idle:
+                self._on_idle(idle)
+
+    def _expected(self, band: int) -> Set[str]:
+        expected: Set[str] = set()
+        for heard in self._recent[band]:
+            expected |= heard
+        return expected
+
+    def _remember(self, band: int, heard: Set[str]) -> None:
+        self._recent[band] = (self._recent[band] + [set(heard)])[-2:]
+
     def _run(self) -> None:
         index = 0
-        hopping = len(self._commands) > 1
+        count = len(self._commands)
+        turns = count > 1 or self._rest_seconds > 0
         while not self._stop.is_set():
-            command = self._commands[index % len(self._commands)]
+            band = index % count
+            command = self._commands[band]
             self._window_over.clear()
+            self._set_idle(False)
             try:
                 self._process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True, bufsize=1)
             except FileNotFoundError:
                 self._log('rtl_433 is not installed (sudo apt install rtl-433); the RTL-SDR receiver is off')
+                self._set_idle(True)
                 return
-            if index % len(self._commands) not in self._announced:
-                self._announced.add(index % len(self._commands))
-                self._log('rtl_433 started: ' + ' '.join(command)
-                          + (' (taking turns, %d s per band)' % self._hop_seconds if hopping else ''))
-            timer = threading.Timer(self._hop_seconds, self._end_window) if hopping else None
+            if band not in self._announced:
+                self._announced.add(band)
+                plan = ''
+                if turns:
+                    plan = ' (up to %d s, moving on once its sensors have reported' % self._hop_seconds
+                    plan += ('; then the dongle rests %d s)' % self._rest_seconds) if self._rest_seconds else ')'
+                self._log('rtl_433 started: ' + ' '.join(command) + plan)
+            timer = threading.Timer(self._hop_seconds, self._end_window) if turns else None
             if timer:
                 timer.daemon = True
                 timer.start()
+            expected = self._expected(band)
+            heard: Set[str] = set()
             assert self._process.stdout is not None
             for line in self._process.stdout:
                 reading = parse_rtl433_line(line)
                 if reading is not None:
                     self._on_reading(reading)
+                    heard.add(reading.source + '-' + reading.channel)
+                    if turns and expected and expected <= heard and not self._window_over.is_set():
+                        self._end_window()      # everyone on this band has reported
                 elif not line.lstrip().startswith('{') and line.strip():
                     self._relay(line.strip())
                 if self._stop.is_set():
@@ -252,10 +298,16 @@ class Rtl433Source:
             if self._stop.is_set():
                 return
             if self._window_over.is_set():
+                self._remember(band, heard)
                 index += 1          # this band's turn is over; next band
-                self._stop.wait(SWITCH_PAUSE_S)
+                if index % count == 0 and self._rest_seconds:
+                    self._set_idle(True)
+                    self._stop.wait(self._rest_seconds)
+                elif count > 1:
+                    self._stop.wait(SWITCH_PAUSE_S)
                 continue
             self._log('rtl_433 exited with code %s (is the dongle plugged in?); retrying in %d s'
                       % (code, RESTART_DELAY_S))
+            self._set_idle(True)
             self._stop.wait(RESTART_DELAY_S)
             index += 1
